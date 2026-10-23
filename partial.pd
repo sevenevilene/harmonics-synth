@@ -1,0 +1,18 @@
+#N canvas 0 0 500 340 12;
+#X text 20 10 One harmonic. \$1 = harmonic number (set by clone). Its level is read live from the amps array.;
+#X obj 20 50 inlet~;
+#X obj 20 80 *~ \$1;
+#X obj 20 140 osc~;
+#X obj 150 140 expr~ (\$v1 < 18000) * amps[\$1 - 1];
+#X obj 150 180 lop~ 30;
+#X text 150 110 level x anti-alias gate;
+#X text 225 180 smooth level changes;
+#X obj 20 220 *~;
+#X obj 20 250 outlet~;
+#X connect 1 0 2 0;
+#X connect 2 0 3 0;
+#X connect 2 0 4 0;
+#X connect 4 0 5 0;
+#X connect 3 0 8 0;
+#X connect 5 0 8 1;
+#X connect 8 0 9 0;
