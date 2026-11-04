@@ -36,6 +36,26 @@ Pure Data vanilla 0.49 or newer (the patch uses `clone` and `expr`).
 
 Presets, algorithms and their sliders (including subs) write only the levels array; moving one, or running animation, replaces levels you drew by hand. To draw your own spectrum, click a preset first and turn animation off. The pan arrays are only ever changed by you (or the centre all pans button).
 
+## Using it in Logic or another DAW (plugdata)
+
+Load the patch in the [plugdata](https://plugdata.org/) instrument plugin. The `pd daw-automation` subpatch registers these controls as DAW automation parameters:
+
+| Parameter | Control | Range |
+|---|---|---|
+| Attack | attack (ms) | 1–2000, logarithmic |
+| Release | release (ms) | 5–5000, logarithmic |
+| Volume | master volume | 0–1 |
+| Subs | subharmonic level | 0–1 |
+| Tilt | tilt (tilt and lfo algorithms) | 0–3 |
+| Center | formant center | 1–32 |
+| Width | formant width | 0.5–8 |
+| Speed | animation speed | 0–4 |
+| Animate | animation on/off | 0 or 1 |
+
+Automation in the DAW moves the matching slider in the patch, and moving a slider updates the DAW. In Logic you can also map them to hardware knobs with *Learn Controller Assignment*. If you hear crackles, raise Logic's I/O buffer size and close the plugdata window while playing.
+
+In plain Pd the `param` objects don't exist, so Pd prints nine "couldn't create" errors when the patch opens. They are harmless.
+
 ## Adding your own algorithm
 
 The formulas are `expr` boxes in `engine.pd`. Each one gets the harmonic number *n* (1 = root, 2 = 2× or ÷2, up to 65) as `$f1` and outputs that harmonic's level (0–1). To add one, give it a new mode number in the two `route` objects and add a message box to the main patch that sends its name to `preset`.
