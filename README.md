@@ -29,6 +29,16 @@ An additive synthesizer for [Pure Data](https://puredata.info/) that you play fr
 - Partials above ~18 kHz (aliasing) and below 20 Hz (inaudible rumble) are muted automatically
 - Audio switches on automatically when the patch opens
 
+## Test tones (no keyboard needed)
+
+The **TEST TONES** section in the main patch plays notes with the mouse, through the same voices as the keyboard:
+
+- **24 … 108**: click to hold that note (C1 … C8) until you press release all, so you can move sliders while it sounds
+- **60 64 67**: holds a C major chord
+- **note** number box: drag or type any MIDI note number to hold it
+- **stop** (release all): releases every held note
+- **sweep C1-C8**: plays C1, C2 … C8 and back, one note every 1.5 seconds, so you can hear the root move
+
 ## CPU
 
 8 voices × 129 partials is about 1,000 oscillators (the arrays are larger, but each voice only plays its 129-slot window). To keep that manageable, each partial reads its level and pan from the arrays about every 26 ms (and smooths between readings) instead of on every sample. The refresh is staggered, a few partials per millisecond, so the work never piles up in one audio block, and each voice switches its audio processing off when it is silent, so only the notes you are playing use CPU. If you still hear crackles, raise the audio buffer under *Media → Audio Settings*, or lower the voice count in `poly 8 1` and `clone -s 1 voice 8` in `harmonics.pd`.
