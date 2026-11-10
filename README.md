@@ -16,7 +16,13 @@ An additive synthesizer for [Pure Data](https://puredata.info/) that you play fr
   - **formant**: a resonant peak at harmonic *center* with a given *width*; when animated, the peak sweeps up and down for a "wah"/vowel effect
   - **lfo**: each harmonic slowly fades in and out at its own rate on top of the tilt slope, so the tone keeps evolving
 - **animate** toggle and **speed** slider to run the formant and lfo algorithms continuously
-- **centre all pans** button: sets both pan arrays back to 1 (every partial in both speakers)
+- **Pan curves** that write both pan arrays from a formula, starting from the root in the centre and moving smoothly outwards:
+  - **spread**: subharmonics glide to the left and harmonics to the right along a smooth S-curve (`tanh`)
+  - **alternate**: neighbouring partials take turns going left and right, going further out the further they are from the root
+  - **spread** slider (−1 to 1): how far out the curve goes; negative values swap the sides
+  - **reach** slider (1 to 64): how many partials from the root it takes to get most of the way out (small = wide almost at once, large = a slow fan-out)
+  - **centre**: sets both pan arrays back to 1 (every partial in both speakers) and turns the pan curve off
+  - The sliders only redraw the pans while spread or alternate is selected, so pans you drew by hand are kept
 - Attack, release and master volume controls
 - Partials above ~18 kHz (aliasing) and below 20 Hz (inaudible rumble) are muted automatically
 - Audio switches on automatically when the patch opens
@@ -36,7 +42,7 @@ Pure Data vanilla 0.49 or newer (the patch uses `clone` and `expr`).
 3. Choose your keyboard under *Media → MIDI Settings*.
 4. Play, and click a preset or algorithm, move the sliders, or draw on the level and pan arrays.
 
-Presets, algorithms and their sliders (including subs) write only the levels array; moving one, or running animation, replaces levels you drew by hand. To draw your own spectrum, click a preset first and turn animation off. The pan arrays are only ever changed by you (or the centre all pans button).
+Presets, algorithms and their sliders (including subs) write only the levels array; moving one, or running animation, replaces levels you drew by hand. To draw your own spectrum, click a preset first and turn animation off. The pan arrays are only changed by you, by the pan curve buttons, and by the spread and reach sliders while a pan curve is selected. To draw your own pans, click centre first (or just draw over a curve, then leave the sliders alone).
 
 ## Using it in Logic or another DAW (plugdata)
 
@@ -53,10 +59,12 @@ Load the patch in the [plugdata](https://plugdata.org/) instrument plugin. The `
 | Width | formant width | 0.5–8 |
 | Speed | animation speed | 0–4 |
 | Animate | animation on/off | 0 or 1 |
+| Spread | pan curve spread | −1 to 1 |
+| Reach | pan curve reach | 1–64 |
 
 Automation in the DAW moves the matching slider in the patch, and moving a slider updates the DAW. In Logic you can also map them to hardware knobs with *Learn Controller Assignment*. If you hear crackles, raise Logic's I/O buffer size and close the plugdata window while playing.
 
-In plain Pd the `param` objects don't exist, so Pd prints nine "couldn't create" errors when the patch opens. They are harmless.
+In plain Pd the `param` objects don't exist, so Pd prints eleven "couldn't create" errors when the patch opens. They are harmless.
 
 ## Adding your own algorithm
 
@@ -66,5 +74,6 @@ The formulas are `expr` boxes in `engine.pd`. Each one gets the harmonic number 
 
 - `harmonics.pd`: main patch with the controls, MIDI input and audio output
 - `engine.pd`: writes the `amps` array (presets and algorithms)
+- `pans.pd`: writes the `panL` and `panR` arrays (pan curves)
 - `voice.pd`: a single voice, loaded 8 times by the main patch; works out how many subharmonics each note gets
 - `partial.pd`: a single partial, loaded 129 times by each voice; picks its ratio and array slot from the note's window
