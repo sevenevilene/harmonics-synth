@@ -8,7 +8,7 @@ An additive synthesizer for [Pure Data](https://puredata.info/) that you play fr
 - The arrays hold 257 slots: 128 subharmonics (root ÷ 129 … root ÷ 2) on the left, the root in the middle, and 128 harmonics (2× … 129×) on the right
 - **Moving root**: each note plays a 129-slot window of the arrays that slides with pitch. A note at frequency *f* has about *f*/20 − 1 subharmonics above 20 Hz and 18000/*f* − 1 harmonics below 18 kHz; the 128 non-root partials are shared between the two sides in that proportion, never giving a side more than can be heard. A low C (65 Hz) gets 1 subharmonic and 127 harmonics; a high E (2.6 kHz) gets 123 subharmonics and 5 harmonics. In the middle of the keyboard (around 440 Hz) only about 60 whole-number partials fit between 20 Hz and 18 kHz at all, so the window takes all the audible subharmonics and the rest of its harmonics fall above 18 kHz and are muted
 - A thin bar under the pan graphs shows which part of the arrays the last note you played uses, with a tall mark at the root
-- Levels stored in the `amps` array, and stereo panning in two more arrays, `panL` and `panR`: how much of each partial goes to the left and to the right speaker (0–1). What you hear on each side is level × pan. The right pan graph is drawn upside down (1 at the bottom), so the two pan graphs mirror each other. Draw on any of them; all three are saved with the patch
+- Levels stored in the `amps` array, and stereo panning in two more arrays, `panL` and `panR`: how much of each partial goes to the left and to the right speaker (0–1). What you hear on each side is level × pan. Both pan graphs have 1 at the top. Panning uses an equal-power law: a partial in the centre is at 0.71 in both graphs, a partial fully to one side is at 1 in that speaker and 0 in the other, and it keeps about the same loudness wherever it is placed. Draw on any of them; all three are saved with the patch
 - Presets: saw, square, triangle, sine, even, organ, bell, clear. Presets and algorithms are mirrored, so subharmonic ÷n gets the same level as harmonic ×n
 - **subs** slider: scales the whole subharmonic side, from 0 (plain harmonics) to 1 (full mirror image) to fatten the sound
 - Algorithms that compute the spectrum:
@@ -19,10 +19,11 @@ An additive synthesizer for [Pure Data](https://puredata.info/) that you play fr
 - **Pan curves** that write both pan arrays from a formula, starting from the root in the centre and moving smoothly outwards:
   - **spread**: subharmonics glide to the left and harmonics to the right along a smooth S-curve (`tanh`)
   - **alternate**: neighbouring partials take turns going left and right, going further out the further they are from the root
-  - **log** (the default, applied when the patch opens): keeps the bass in the middle. The root and the partials an octave from it (÷2 and ×2) stay centred, then the curve widens evenly per octave, with subharmonics to the left and harmonics to the right, until it is fully wide at harmonic number *reach* (4 at the least)
+  - **log** (the default, applied when the patch opens): keeps the bass in the middle. Every subharmonic, the root and ×2 stay centred; from ×3 up the harmonics widen evenly per octave, taking turns between the speakers (odd harmonics left, even ones right), until they are fully wide at harmonic number *reach* (4 at the least)
+  - **log-side**: the same as log, but every harmonic moves towards one speaker (right, or left with a negative spread) instead of taking turns
   - **spread** slider (−1 to 1): how far out the curve goes; negative values swap the sides
   - **reach** slider (1 to 64): how many partials from the root it takes to get most of the way out (small = wide almost at once, large = a slow fan-out); for log, the harmonic number where it is fully wide
-  - **centre**: sets both pan arrays back to 1 (every partial in both speakers) and turns the pan curve off
+  - **centre**: sets both pan arrays to 0.71 (every partial in the centre) and turns the pan curve off
   - The sliders only redraw the pans while spread or alternate is selected, so pans you drew by hand are kept
 - Attack, release and master volume controls
 - Partials above ~18 kHz (aliasing) and below 20 Hz (inaudible rumble) are muted automatically
