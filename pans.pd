@@ -1,7 +1,7 @@
 #N canvas 0 0 900 640 12;
-#X text 20 10 Pan curve engine: writes the panL and panR arrays (257 slots \, root = index 128) from a formula. d = distance from the root in slots (negative = subharmonic). x = stereo position (-1 left \, 0 centre \, 1 right) = spread * tanh(d / reach) for "spread" \, or with every other partial flipped for "alternate". Left = min(1 \, 1 - x) \, right = min(1 \, 1 + x) \, so the root stays full in both speakers. Sliders only redraw while a curve is selected \, so pans you drew by hand are kept.;
+#X text 20 10 Pan curve engine: writes the panL and panR arrays (257 slots \, root = index 128) from a formula. d = distance from the root in slots (negative = subharmonic). x = stereo position (-1 left \, 0 centre \, 1 right) = spread * tanh(d / reach) for "spread" \, or with every other partial flipped for "alternate". "log" keeps the root and its octave (n = 1 and 2 \, where n = |d| + 1) in the centre and then widens evenly per octave: x = spread * log(n/2) / log(reach/2) \, full width from harmonic number reach (min 4) outwards \, subharmonics left and harmonics right. Left = min(1 \, 1 - x) \, right = min(1 \, 1 + x) \, so the root stays full in both speakers. Sliders only redraw while a curve is selected \, so pans you drew by hand are kept.;
 #X obj 20 110 r pancurve;
-#X obj 20 140 route spread alternate centre;
+#X obj 20 140 route spread alternate centre log;
 #X msg 20 170 1;
 #X msg 70 170 2;
 #X obj 240 170 t b b;
@@ -24,11 +24,12 @@
 #X msg 120 350 0;
 #X obj 20 440 t f f;
 #X obj 20 470 expr \$f1 - 128;
-#X obj 20 500 expr \$f3 * tanh(if(\$f2 == 1 \, \$f1 \, abs(\$f1)) / max(\$f4 \, 1)) * if(\$f2 == 1 \, 1 \, fmod(abs(\$f1) \, 2)*2 - 1);
+#X obj 20 500 expr \$f3 * if(\$f2 == 3 \, if(\$f1 < 0 \, -1 \, 1) * min(1 \, max(0 \, log((abs(\$f1) + 1)/2)) / log(max(\$f4 \, 4)/2)) \, tanh(if(\$f2 == 1 \, \$f1 \, abs(\$f1)) / max(\$f4 \, 1)) * if(\$f2 == 1 \, 1 \, fmod(abs(\$f1) \, 2)*2 - 1));
 #X obj 20 530 expr min(1 \, 1 - \$f1) \; min(1 \, 1 + \$f1);
 #X obj 20 580 tabwrite panL;
 #X obj 200 580 tabwrite panR;
 #X text 20 290 fill: compute every slot;
+#X msg 120 170 3;
 #X connect 1 0 2 0;
 #X connect 2 0 3 0;
 #X connect 2 1 4 0;
@@ -65,3 +66,5 @@
 #X connect 25 0 26 0;
 #X connect 26 0 27 0;
 #X connect 26 1 28 0;
+#X connect 2 3 30 0;
+#X connect 30 0 8 0;

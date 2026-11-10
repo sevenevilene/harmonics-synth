@@ -33,7 +33,7 @@
 #X obj 560 640 hsl 150 18 0 4 0 0 speed speed-in speed_(animate) 0 -9 0 10 #fcfcfc #000000 #000000 0 1;
 #X obj 300 700 engine;
 #X obj 560 700 loadbang;
-#X msg 560 730 \; pd dsp 1 \; attack-in 10 \; release-in 300 \; master-in 0.7 \; tilt-in 1 \; center-in 8 \; width-in 2 \; speed-in 1 \; subs-in 0.5 \; spread-in 0.8 \; reach-in 16 \; preset saw;
+#X msg 560 730 \; pd dsp 1 \; attack-in 10 \; release-in 300 \; master-in 0.7 \; tilt-in 1 \; center-in 8 \; width-in 2 \; speed-in 1 \; subs-in 0.5 \; spread-in 0.8 \; reach-in 16 \; pancurve log \; preset saw;
 #X obj 20 700 notein;
 #X obj 20 730 poly 8 1;
 #X obj 20 760 pack f f f;
@@ -243,7 +243,7 @@
 #X text 800 420 Pan curves (smooth from the root outwards):;
 #X msg 800 445 spread;
 #X msg 870 445 alternate;
-#X msg 960 445 centre;
+#X msg 1000 445 centre;
 #X obj 800 475 s pancurve;
 #X obj 800 520 hsl 150 18 -1 1 0 0 spread spread-in spread_(minus_flips_sides) 0 -9 0 10 #fcfcfc #000000 #000000 0 1;
 #X obj 800 570 hsl 150 18 1 64 1 0 reach reach-in reach_(partials) 0 -9 0 10 #fcfcfc #000000 #000000 0 1;
@@ -251,3 +251,5 @@
 #X connect 64 0 67 0;
 #X connect 65 0 67 0;
 #X connect 66 0 67 0;
+#X msg 955 445 log;
+#X connect 71 0 67 0;

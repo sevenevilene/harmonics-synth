@@ -19,8 +19,9 @@ An additive synthesizer for [Pure Data](https://puredata.info/) that you play fr
 - **Pan curves** that write both pan arrays from a formula, starting from the root in the centre and moving smoothly outwards:
   - **spread**: subharmonics glide to the left and harmonics to the right along a smooth S-curve (`tanh`)
   - **alternate**: neighbouring partials take turns going left and right, going further out the further they are from the root
+  - **log** (the default, applied when the patch opens): keeps the bass in the middle. The root and the partials an octave from it (÷2 and ×2) stay centred, then the curve widens evenly per octave, with subharmonics to the left and harmonics to the right, until it is fully wide at harmonic number *reach* (4 at the least)
   - **spread** slider (−1 to 1): how far out the curve goes; negative values swap the sides
-  - **reach** slider (1 to 64): how many partials from the root it takes to get most of the way out (small = wide almost at once, large = a slow fan-out)
+  - **reach** slider (1 to 64): how many partials from the root it takes to get most of the way out (small = wide almost at once, large = a slow fan-out); for log, the harmonic number where it is fully wide
   - **centre**: sets both pan arrays back to 1 (every partial in both speakers) and turns the pan curve off
   - The sliders only redraw the pans while spread or alternate is selected, so pans you drew by hand are kept
 - Attack, release and master volume controls
@@ -42,7 +43,7 @@ Pure Data vanilla 0.49 or newer (the patch uses `clone` and `expr`).
 3. Choose your keyboard under *Media → MIDI Settings*.
 4. Play, and click a preset or algorithm, move the sliders, or draw on the level and pan arrays.
 
-Presets, algorithms and their sliders (including subs) write only the levels array; moving one, or running animation, replaces levels you drew by hand. To draw your own spectrum, click a preset first and turn animation off. The pan arrays are only changed by you, by the pan curve buttons, and by the spread and reach sliders while a pan curve is selected. To draw your own pans, click centre first (or just draw over a curve, then leave the sliders alone).
+Presets, algorithms and their sliders (including subs) write only the levels array; moving one, or running animation, replaces levels you drew by hand. To draw your own spectrum, click a preset first and turn animation off. The pan arrays are only changed by you, by the pan curve buttons, and by the spread and reach sliders while a pan curve is selected. To draw your own pans, click centre first (or just draw over a curve, then leave the sliders alone). Because the log curve is applied when the patch opens, pans you drew are replaced the next time you open it.
 
 ## Using it in Logic or another DAW (plugdata)
 
