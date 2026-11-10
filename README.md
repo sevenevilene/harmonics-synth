@@ -26,6 +26,7 @@ An additive synthesizer for [Pure Data](https://puredata.info/) that you play fr
   - **centre**: sets both pan arrays to 0.71 (every partial in the centre) and turns the pan curve off
   - The sliders only redraw the pans while spread or alternate is selected, so pans you drew by hand are kept
 - Attack, release and master volume controls
+- **glide** toggle (off by default): the graphs take over the attack and release. Each new note starts every partial from 0 and ramps it up to its graph value over the attack time, and on release every partial glides down to 0 over the release time; the regular volume envelope is switched off (it opens in 1 ms and holds until the voice goes quiet). While a note is held, any change to the graphs glides there instead of jumping: rising values take the attack time and falling ones the release time. Try it with a long attack and release while clicking presets, switching pan curves or with animate on. With glide off, the regular volume envelope does the attack and release and partials follow the graphs with a quick 30 ms smoothing
 - Partials above ~18 kHz (aliasing) and below 20 Hz (inaudible rumble) are muted automatically
 - Audio switches on automatically when the patch opens
 
@@ -73,10 +74,11 @@ Load the patch in the [plugdata](https://plugdata.org/) instrument plugin. The `
 | Animate | animation on/off | 0 or 1 |
 | Spread | pan curve spread | −1 to 1 |
 | Reach | pan curve reach | 1–64 |
+| Glide | glide on/off | 0 or 1 |
 
 Automation in the DAW moves the matching slider in the patch, and moving a slider updates the DAW. In Logic you can also map them to hardware knobs with *Learn Controller Assignment*. If you hear crackles, raise Logic's I/O buffer size and close the plugdata window while playing.
 
-In plain Pd the `param` objects don't exist, so Pd prints eleven "couldn't create" errors when the patch opens. They are harmless.
+In plain Pd the `param` objects don't exist, so Pd prints twelve "couldn't create" errors when the patch opens. They are harmless.
 
 ## Adding your own algorithm
 
