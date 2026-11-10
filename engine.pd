@@ -1,5 +1,5 @@
 #N canvas 0 0 1200 800 12;
-#X text 20 10 Spectrum engine: writes 129 levels into the amps array - 64 subharmonics \, the root (slot 65) \, 64 harmonics. Each formula gets the harmonic number n (1 = root \, 2 = 2x or 1/2 \, ...) as \$f1 \, so presets are mirrored onto both sides. The sub side is scaled by the subs slider.;
+#X text 20 10 Spectrum engine: writes 257 levels into the amps array - 128 subharmonics \, the root (slot 129 \, the middle) \, 128 harmonics. Each voice plays a 129-slot window of it that slides with the note. Each formula gets the harmonic number n (1 = root \, 2 = 2x or 1/2 \, ...) as \$f1 \, so presets are mirrored onto both sides. The sub side is scaled by the subs slider.;
 #X obj 20 50 r preset;
 #X obj 20 80 route saw square triangle sine even organ bell clear tilt formant lfo;
 #X msg 20 110 1;
@@ -18,7 +18,7 @@
 #X text 20 210 fill: run the current mode's formula for every harmonic;
 #X obj 20 240 v mode;
 #X obj 20 270 t b f b;
-#X msg 20 300 129;
+#X msg 20 300 257;
 #X msg 140 300 0;
 #X obj 20 330 until;
 #X obj 20 360 f;
@@ -63,8 +63,8 @@
 #X obj 800 430 v mode;
 #X obj 800 460 moses 10;
 #X obj 840 490 b;
-#X obj 200 450 expr abs(\$f1 - 65) + 1;
-#X obj 420 450 expr if(\$f1 < 65 \, \$f2 \, 1);
+#X obj 200 450 expr abs(\$f1 - 129) + 1;
+#X obj 420 450 expr if(\$f1 < 129 \, \$f2 \, 1);
 #X obj 20 720 * 1;
 #X obj 360 390 r subs;
 #X obj 360 420 t b f;
