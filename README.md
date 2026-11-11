@@ -42,11 +42,11 @@ The **TEST TONES** section in the main patch plays notes with the mouse, through
 
 ## CPU
 
-8 voices × 129 partials is about 1,000 oscillators (the arrays are larger, but each voice only plays its 129-slot window). To keep that manageable, each partial reads its level and pan from the arrays about every 26 ms (and smooths between readings) instead of on every sample. The refresh is staggered, a few partials per millisecond, so the work never piles up in one audio block, and each voice switches its audio processing off when it is silent, so only the notes you are playing use CPU. If you still hear crackles, raise the audio buffer under *Media → Audio Settings*, or lower the voice count in `poly 8 1` and `clone -s 1 voice 8` in `harmonics.pd`.
+8 voices × 129 partials is about 1,000 oscillators (the arrays are larger, but each voice only plays its 129-slot window). To keep that manageable, each partial reads its level and pan from the arrays about every 26 ms (and smooths between readings) instead of on every sample. The refresh is staggered, a few partials per millisecond, so the work never piles up in one audio block. All 8 voices run all the time (the patch avoids `switch~` so that it can be compiled with Heavy, see below), so expect noticeably more CPU in plain Pd or uncompiled plugdata than in a compiled build. If you hear crackles, raise the audio buffer under *Media → Audio Settings*, or use fewer voices: lower `poly 8 1` and delete voices (and outlets of `route 1 2 3 4 5 6 7 8`) in `harmonics.pd`.
 
 ## Requirements
 
-Pure Data vanilla 0.49 or newer (the patch uses `clone` and `expr`).
+Pure Data vanilla 0.49 or newer (the patch uses `expr`).
 
 ## Usage
 
@@ -59,7 +59,7 @@ Presets, algorithms and their sliders (including subs) write only the levels arr
 
 ## Using it in Logic or another DAW (plugdata)
 
-Load the patch in the [plugdata](https://plugdata.org/) instrument plugin. The `pd daw-automation` subpatch registers these controls as DAW automation parameters:
+Load the patch in the [plugdata](https://plugdata.org/) instrument plugin. For DAW automation, also open `daw-automation.pd` in the same plugdata instance: it registers these controls as DAW automation parameters with plugdata's `param` object. (It is a separate file because `param` cannot be compiled, see *Compiled mode* below.)
 
 | Parameter | Control | Range |
 |---|---|---|
@@ -78,7 +78,16 @@ Load the patch in the [plugdata](https://plugdata.org/) instrument plugin. The `
 
 Automation in the DAW moves the matching slider in the patch, and moving a slider updates the DAW. In Logic you can also map them to hardware knobs with *Learn Controller Assignment*. If you hear crackles, raise Logic's I/O buffer size and close the plugdata window while playing.
 
-In plain Pd the `param` objects don't exist, so Pd prints twelve "couldn't create" errors when the patch opens. They are harmless.
+## Compiled mode (Heavy)
+
+The patch only uses objects that the [Heavy](https://github.com/Wasted-Audio/hvcc) compiler supports, so it works with plugdata's *Compiled Mode* and can be exported (*Compile…*) as a DPF plugin (VST3, CLAP, LV2), a Daisy, OWL or Web Audio build, or C code. To make that possible:
+
+- no `clone`: the 8 voices in `harmonics.pd` and the 129 partials in `voice.pd` are separate copies of the abstraction
+- no `value`, array messages (`const`), `switch~` or names built at run time (`tick-$1` in a message): these were replaced with `send`/`receive`, small loops and the static `pd tick-dispatch` subpatch
+- no `list split` (Heavy ignores its split point) and no `expr` with several expressions separated by `;` (Heavy mixes up their outlets): `unpack` and pairs of single `expr`s are used instead. Write `$f1` in `expr`, not `\$f1` (Pd saves it that way too)
+- the `pd daw-params` subpatch holds `[r Name @hv_param min max default]` receivers. In a Heavy export they become the plugin's parameters (same names and ranges as the table above) and drive the sliders; in plain Pd they are ordinary receives
+
+A compiled build has no patch window, so the graphs can't be drawn on there. They start from the preset and pan curve chosen at load, and the parameters change them as usual.
 
 ## Adding your own algorithm
 
@@ -91,3 +100,4 @@ The formulas are `expr` boxes in `engine.pd`. Each one gets the harmonic number 
 - `pans.pd`: writes the `panL` and `panR` arrays (pan curves)
 - `voice.pd`: a single voice, loaded 8 times by the main patch; works out how many subharmonics each note gets
 - `partial.pd`: a single partial, loaded 129 times by each voice; picks its ratio and array slot from the note's window
+- `daw-automation.pd`: optional, plugdata only (not compiled): DAW automation parameters for the uncompiled plugin
