@@ -1,12 +1,12 @@
 #N canvas 0 0 1920 1049 12;
 #X text 813 -2 Harmonic synth - 8 voices x 129 partials taken from 128 subharmonics + root + 128 harmonics. The root moves with the note: high notes use more subharmonics \, low notes more harmonics \, so the partials stay audible. Play a MIDI keyboard. Pd 0.49+ needed. Stereo.;
-#X text 811 86 LEVELS - left half: subharmonics 1/129 ... 1/2 | middle: root | right half: harmonics 2x ... 129x. Draw on it with the mouse.;
+#X text 811 86 LEVELS - left half: subharmonics 1/129 ... 1/2 | middle: root | right half: harmonics 2x ... 129x. Top = 1 \, half-way up = 0 \, bottom = -1 (same level \, phase inverted). Draw on it with the mouse.;
 #N canvas 0 50 450 250 (subpatch) 0;
 #X array amps 257 float 5;
 #A 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.2 0 0 0 0.2 0 0 0 0.35 0 0.4 0 0.5 0.6 0.8 1 0.8 0.6 0.5 0 0.4 0 0.35 0 0 0 0.2 0 0 0 0.2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0;
 #A color 0;
 #A width 1;
-#X coords 0 1 256 0 771 120 1 0 0;
+#X coords 0 1 256 -1 771 120 1 0 0;
 #X restore 18 14 graph;
 #X obj 620 440 hsl 150 18 1 2000 1 0 attack attack-in attack_(ms) 0 -9 0 10 #fcfcfc #000000 #000000 0 1;
 #X obj 620 490 hsl 150 18 5 5000 1 0 release release-in release_(ms) 0 -9 0 10 #fcfcfc #000000 #000000 0 1;
