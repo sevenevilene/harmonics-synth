@@ -1,28 +1,43 @@
 # harmonics-synth
 
-An additive synthesizer for [Pure Data](https://puredata.info/) that you play from a MIDI keyboard. Each note is built from 16 harmonics, and you set the level of each one with its own slider.
+An additive synthesizer plugin (AU, VST3 and standalone app) built with [JUCE](https://juce.com/). Each note is a sum of 129 sine waves: subharmonics below the root, the root, and harmonics above it. Their levels and stereo positions live in three tables that you can draw on, fill from a preset, or have an algorithm write and animate.
 
-## Features
+The synth started as a Pure Data patch, which is kept in [prototype/](prototype/) with its own [README](prototype/README.md). That README explains the sound design in detail (moving root, presets, algorithms, pan curves, glide); the plugin follows it.
 
-- 8-voice polyphony
-- 16 harmonic sliders (1× to 16× the fundamental)
-- Presets: saw, square, triangle, organ, sine, bell, even, clear
-- Attack, release and master volume controls
-- Harmonics above ~18 kHz are muted automatically to avoid aliasing
-- Audio switches on automatically when the patch opens
+## How a note is calculated
 
-## Requirements
+For a MIDI note with frequency *f*:
 
-Pure Data vanilla 0.47 or newer (the patch uses the `clone` object).
+```
+out(t) = envelope(t) × Σ amps[slot] × pan[slot] × sin(2π × f × ratio[slot] × t)
+```
 
-## Usage
+summed over the note's 129 slots, where `ratio` is 1/n for a subharmonic, 1 for the root and n for a harmonic. The tables hold 257 slots (128 subharmonics, the root, 128 harmonics) and each note uses a 129-slot window that slides with pitch, so the partials stay between 20 Hz and 18 kHz. Level changes are ramped over 30 ms so drawing on a table doesn't click.
 
-1. Keep `harmonics.pd` and `voice.pd` in the same folder.
-2. Open `harmonics.pd` in Pd.
-3. Choose your keyboard under *Media → MIDI Settings*.
-4. Play, and drag the harmonic sliders or click a preset to change the sound.
+## Building
+
+You need CMake 3.22 or newer and a C++20 compiler (on macOS the Xcode command line tools are enough). JUCE 9.0.5 is downloaded by CMake the first time you configure.
+
+```bash
+cmake -S . -B build
+```
+
+```bash
+cmake --build build -j 8
+```
+
+The results are in `build/Harmonics_artefacts/Release/`: `Standalone/Harmonics.app`, `AU/Harmonics.component` and `VST3/Harmonics.vst3`. To have them copied into `~/Library/Audio/Plug-Ins` after each build so that a DAW finds them, configure with `-DHARMONICS_COPY_PLUGINS=ON`.
+
+## Using it
+
+Play from a MIDI keyboard or click the on-screen one. Draw on the three graphs with the mouse; click a preset or pan curve to overwrite them. The algorithm sliders (tilt, center, width) only redraw the levels while tilt, formant or lfo is selected, and spread and reach only redraw the pans while a curve other than centre is selected. Moving subs always redraws the levels. The tables are saved with the plugin state.
+
+All controls are automation parameters: Attack, Release, Volume, Subs, Tilt, Center, Width, Speed, Animate, Spread, Reach, Glide, Spectrum and Pan Curve.
 
 ## Files
 
-- `harmonics.pd`: main patch with the controls, MIDI input and audio output
-- `voice.pd`: a single voice, loaded 8 times by the main patch
+- `CMakeLists.txt`: the JUCE plugin project
+- `Source/SynthEngine.h/.cpp`: the synth itself (tables, presets, pan curves, voices), plain C++ with no JUCE dependency
+- `Source/PluginProcessor.h/.cpp`: parameters, MIDI, state saving
+- `Source/PluginEditor.h/.cpp`: the window (graphs, buttons, sliders, keyboard)
+- `prototype/`: the original Pure Data patch
