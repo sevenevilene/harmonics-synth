@@ -2,6 +2,8 @@
 
 An additive synthesizer plugin (AU, VST3 and standalone app) built with [JUCE](https://juce.com/). Each note is a sum of 129 sine waves: subharmonics below the root, the root, and harmonics above it. Their levels and stereo positions live in three tables that you can draw on, fill from a preset, or have an algorithm write and animate.
 
+![The Harmonics plugin window](docs/screenshot.png)
+
 The synth started as a Pure Data patch, which is kept in [prototype/](prototype/) with its own [README](prototype/README.md). That README explains the sound design in detail (moving root, presets, algorithms, pan curves, glide); the plugin follows it.
 
 ## How a note is calculated
