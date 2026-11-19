@@ -32,6 +32,8 @@ The results are in `build/Harmonics_artefacts/Release/`: `Standalone/Harmonics.a
 
 Play from a MIDI keyboard or click the on-screen one. Draw on the three graphs with the mouse; click a preset or pan curve to overwrite them. The algorithm sliders (tilt, center, width) only redraw the levels while tilt, formant or lfo is selected, and spread and reach only redraw the pans while a curve other than centre is selected. Moving subs always redraws the levels. The tables are saved with the plugin state.
 
+The graph above the keyboard is a spectrum analyser showing what actually comes out (left channel bright, right channel faint), from 20 Hz to 20 kHz and 0 dB (full scale) down to -96 dB. The loudest peaks are labelled with their frequency in Hz. The colour shows where a frequency lies relative to the last played note: green at its root, towards blue for harmonics and towards red for subharmonics, reaching full blue and red five octaves away.
+
 All controls are automation parameters: Attack, Release, Volume, Subs, Tilt, Center, Width, Speed, Animate, Spread, Reach, Glide, Spectrum and Pan Curve.
 
 ## Files
@@ -39,5 +41,5 @@ All controls are automation parameters: Attack, Release, Volume, Subs, Tilt, Cen
 - `CMakeLists.txt`: the JUCE plugin project
 - `Source/SynthEngine.h/.cpp`: the synth itself (tables, presets, pan curves, voices), plain C++ with no JUCE dependency
 - `Source/PluginProcessor.h/.cpp`: parameters, MIDI, state saving
-- `Source/PluginEditor.h/.cpp`: the window (graphs, buttons, sliders, keyboard)
+- `Source/PluginEditor.h/.cpp`: the window (graphs, buttons, sliders, spectrum analyser, keyboard)
 - `prototype/`: the original Pure Data patch

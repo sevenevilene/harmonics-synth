@@ -33,6 +33,30 @@ private:
     const std::atomic<int>& subharmonics;
 };
 
+// The spectrum of the output, left and right, on a log frequency axis. The
+// colour shows where a frequency lies relative to the last played note: green
+// at its root, towards blue for harmonics and towards red for subharmonics.
+class SpectrumAnalyser final : public juce::Component
+{
+public:
+    explicit SpectrumAnalyser (const OutputTap& t) : tap (t) {}
+
+    void update (double sampleRate, double rootFrequency); // call regularly from the message thread
+    void paint (juce::Graphics&) override;
+
+private:
+    static constexpr int fftOrder = 13, fftSize = 1 << fftOrder, numBins = fftSize / 2;
+    static constexpr float minDb = -96.0f, maxDb = 0.0f, minHz = 20.0f, maxHz = 20000.0f;
+
+    const OutputTap& tap;
+    juce::dsp::FFT fft { fftOrder };
+    juce::dsp::WindowingFunction<float> window { (size_t) fftSize, juce::dsp::WindowingFunction<float>::hann };
+    std::vector<float> scratch = std::vector<float> ((size_t) fftSize * 2);
+    std::array<std::vector<float>, 2> levels { std::vector<float> ((size_t) numBins, minDb),
+                                               std::vector<float> ((size_t) numBins, minDb) };
+    double rate = 44100.0, rootHz = 261.63;
+};
+
 class HarmonicsAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                             private juce::Timer
 {
@@ -60,6 +84,7 @@ private:
 
     GraphComponent amps, panL, panR;
     WindowBar windowBar;
+    SpectrumAnalyser analyser;
     juce::OwnedArray<juce::TextButton> spectrumButtons, panButtons;
     Control tilt, center, width, speed, subs, spread, reach, attack, release, volume;
     juce::ToggleButton animate { "animate" }, glide { "glide" };

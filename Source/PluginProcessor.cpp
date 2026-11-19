@@ -36,6 +36,28 @@ void tableFromString (Table& table, const juce::String& text)
 }
 } // namespace
 
+void OutputTap::push (const float* left, const float* right, int numSamples) noexcept
+{
+    int pos = writePos.load (std::memory_order_relaxed);
+    for (int i = 0; i < numSamples; ++i)
+    {
+        samples[0][(size_t) pos].store (left[i], std::memory_order_relaxed);
+        samples[1][(size_t) pos].store (right[i], std::memory_order_relaxed);
+        pos = (pos + 1) & (size - 1);
+    }
+    writePos.store (pos, std::memory_order_release);
+}
+
+void OutputTap::copyLatest (int channel, float* dest, int numSamples) const noexcept
+{
+    int pos = (writePos.load (std::memory_order_acquire) - numSamples) & (size - 1);
+    for (int i = 0; i < numSamples; ++i)
+    {
+        dest[i] = samples[(size_t) channel][(size_t) pos].load (std::memory_order_relaxed);
+        pos = (pos + 1) & (size - 1);
+    }
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout HarmonicsAudioProcessor::createLayout()
 {
     using Float = juce::AudioParameterFloat;
@@ -204,6 +226,7 @@ void HarmonicsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     }
 
     engine.render (left + pos, right + pos, numSamples - pos, settings, master);
+    outputTap.push (left, right, numSamples);
 
     for (int channel = 2; channel < buffer.getNumChannels(); ++channel)
         buffer.clear (channel, 0, numSamples);

@@ -84,6 +84,206 @@ void WindowBar::paint (juce::Graphics& g)
 }
 
 //==============================================================================
+void SpectrumAnalyser::update (double sampleRate, double rootFrequency)
+{
+    rate = sampleRate > 0.0 ? sampleRate : 44100.0;
+    rootHz = rootFrequency;
+
+    for (size_t channel = 0; channel < 2; ++channel)
+    {
+        std::fill (scratch.begin(), scratch.end(), 0.0f);
+        tap.copyLatest ((int) channel, scratch.data(), fftSize);
+        window.multiplyWithWindowingTable (scratch.data(), (size_t) fftSize);
+        fft.performFrequencyOnlyForwardTransform (scratch.data(), true);
+
+        // The window is normalised, so a full-scale sine reads 0 dB. Levels rise
+        // at once and fall back slowly, which makes the picture easier to read.
+        for (size_t bin = 0; bin < (size_t) numBins; ++bin)
+        {
+            const float db = juce::Decibels::gainToDecibels (scratch[bin] * 2.0f / (float) fftSize, minDb);
+            levels[channel][bin] = juce::jmax (db, levels[channel][bin] - 1.5f);
+        }
+    }
+
+    repaint();
+}
+
+void SpectrumAnalyser::paint (juce::Graphics& g)
+{
+    const auto area = getLocalBounds().toFloat();
+    const float w = area.getWidth(), h = area.getHeight();
+    const float octaves = std::log (maxHz / minHz);
+    const auto xFor = [&] (float hz) { return w * std::log (hz / minHz) / octaves; };
+    const auto yFor = [&] (float db) { return h * (maxDb - juce::jlimit (minDb, maxDb, db)) / (maxDb - minDb); };
+
+    g.setColour (panel);
+    g.fillRect (area);
+
+    g.setFont (11.0f);
+    for (const float hz : { 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f })
+    {
+        const float x = std::round (xFor (hz));
+        g.setColour (faint);
+        g.fillRect (x, 0.0f, 1.0f, h);
+
+        if (juce::exactlyEqual (hz, 100.0f) || juce::exactlyEqual (hz, 1000.0f) || juce::exactlyEqual (hz, 10000.0f))
+        {
+            g.setColour (textColour.withAlpha (0.6f));
+            g.drawText (hz < 1000.0f ? juce::String ((int) hz) : juce::String ((int) hz / 1000) + "k",
+                        juce::Rectangle<float> (x + 3.0f, h - 15.0f, 40.0f, 13.0f), juce::Justification::bottomLeft);
+        }
+    }
+    for (const float db : { -24.0f, -48.0f, -72.0f })
+    {
+        const float y = std::round (yFor (db));
+        g.setColour (faint);
+        g.fillRect (0.0f, y, w, 1.0f);
+        g.setColour (textColour.withAlpha (0.6f));
+        g.drawText (juce::String ((int) db), juce::Rectangle<float> (w - 44.0f, y - 14.0f, 40.0f, 13.0f),
+                    juce::Justification::bottomRight);
+    }
+
+    // Green at the root, reaching full blue five octaves above it (the 32nd
+    // harmonic) and full red five octaves below (the 32nd subharmonic).
+    const auto colourFor = [&] (float hz)
+    {
+        const float distance = juce::jlimit (-1.0f, 1.0f, std::log2 (hz / (float) rootHz) / 5.0f);
+        return juce::Colour::fromHSV ((1.0f + distance) / 3.0f, 0.7f, 1.0f, 1.0f);
+    };
+
+    const int steps = 64;
+    juce::ColourGradient scale (colourFor (minHz), 0.0f, 0.0f, colourFor (maxHz), w, 0.0f, false);
+    for (int i = 1; i < steps; ++i)
+        scale.addColour ((double) i / steps, colourFor (minHz * std::exp (octaves * (float) i / (float) steps)));
+
+    if (rootHz >= minHz && rootHz <= maxHz)
+    {
+        g.setColour (colourFor ((float) rootHz).withAlpha (0.35f));
+        g.fillRect (std::round (xFor ((float) rootHz)), 0.0f, 1.0f, h);
+    }
+
+    const float binsPerHz = (float) fftSize / (float) rate;
+    const auto binFor = [&] (float x) { return minHz * std::exp (octaves * x / w) * binsPerHz; };
+
+    for (const size_t channel : { (size_t) 1, (size_t) 0 })
+    {
+        const auto& level = levels[channel];
+        juce::Path line;
+        bool started = false;
+
+        for (float x = 0.0f; x <= w; x += 1.0f)
+        {
+            const float from = binFor (x), to = binFor (x + 1.0f);
+            if (from >= (float) (numBins - 1))
+                break; // above half the sample rate
+
+            const auto first = (size_t) from;
+            float db;
+            if (to - from < 1.0f) // bins are wider than a pixel down here: interpolate
+            {
+                db = level[first] + (from - (float) first) * (level[first + 1] - level[first]);
+            }
+            else // several bins per pixel: show the loudest
+            {
+                const auto last = juce::jmin ((size_t) to, (size_t) numBins - 1);
+                db = *std::max_element (level.begin() + (std::ptrdiff_t) first, level.begin() + (std::ptrdiff_t) last + 1);
+            }
+
+            // (Path::isEmpty() stays true until the path has a line in it.)
+            if (! std::exchange (started, true))
+                line.startNewSubPath (x, yFor (db));
+            else
+                line.lineTo (x, yFor (db));
+        }
+
+        if (! started)
+            continue;
+
+        // The left channel is drawn bright and filled, the right one faint on top of it.
+        if (channel == 0)
+        {
+            auto fill = line;
+            fill.lineTo (line.getCurrentPosition().x, h);
+            fill.lineTo (0.0f, h);
+            fill.closeSubPath();
+
+            auto faintScale = scale;
+            faintScale.multiplyOpacity (0.15f);
+            g.setGradientFill (faintScale);
+            g.fillPath (fill);
+            g.setGradientFill (scale);
+            g.strokePath (line, juce::PathStrokeType (1.4f));
+        }
+        else
+        {
+            auto faintScale = scale;
+            faintScale.multiplyOpacity (0.45f);
+            g.setGradientFill (faintScale);
+            g.strokePath (line, juce::PathStrokeType (1.0f));
+        }
+    }
+
+    // Label the loudest peaks with their frequency. A peak is a bin that stands
+    // at least 6 dB above the bins three to either side, in either channel.
+    struct Peak
+    {
+        float db, hz;
+    };
+    std::vector<Peak> peaks;
+    const auto both = [&] (size_t bin) { return juce::jmax (levels[0][bin], levels[1][bin]); };
+
+    for (size_t bin = 3; bin + 3 < (size_t) numBins; ++bin)
+    {
+        const float below = both (bin - 1), db = both (bin), above = both (bin + 1);
+        if (db < -72.0f || db < below || db <= above || db - juce::jmax (both (bin - 3), both (bin + 3)) < 6.0f)
+            continue;
+
+        // Fit a parabola through the three bins to find the frequency between them.
+        const float curve = below - 2.0f * db + above;
+        const float offset = curve < 0.0f ? 0.5f * (below - above) / curve : 0.0f;
+        const float hz = ((float) bin + offset) / binsPerHz;
+        if (hz >= minHz && hz <= maxHz)
+            peaks.push_back ({ db, hz });
+    }
+
+    std::sort (peaks.begin(), peaks.end(), [] (const Peak& a, const Peak& b) { return a.db > b.db; });
+
+    const float labelWidth = 44.0f;
+    std::vector<float> labelled;
+    g.setFont (11.0f);
+
+    for (const auto& peak : peaks)
+    {
+        const float x = xFor (peak.hz), y = yFor (peak.db);
+        if (std::any_of (labelled.begin(), labelled.end(), [&] (float other) { return std::abs (other - x) < labelWidth; }))
+            continue; // would overlap the label of a louder peak
+
+        const auto text = peak.hz < 100.0f    ? juce::String (peak.hz, 1)
+                          : peak.hz < 1000.0f ? juce::String (juce::roundToInt (peak.hz))
+                                              : juce::String (peak.hz / 1000.0f, 2) + "k";
+        const float left = juce::jlimit (0.0f, w - labelWidth, x - labelWidth * 0.5f);
+
+        g.setColour (textColour);
+        g.fillEllipse (x - 2.0f, y - 2.0f, 4.0f, 4.0f);
+        g.drawText (text, juce::Rectangle<float> (left, juce::jmax (18.0f, y - 16.0f), labelWidth, 13.0f),
+                    juce::Justification::centred);
+
+        labelled.push_back (x);
+        if (labelled.size() == 8)
+            break;
+    }
+
+    auto legend = getLocalBounds().reduced (6, 3).removeFromTop (14);
+    g.setFont (juce::FontOptions().withHeight (13.0f));
+    g.setColour (textColour.withAlpha (0.45f));
+    g.drawText ("right", legend.removeFromRight (34), juce::Justification::topRight);
+    g.setColour (textColour);
+    g.drawText ("left", legend.removeFromRight (30), juce::Justification::topRight);
+    g.setColour (textColour);
+    g.drawText ("output spectrum", legend, juce::Justification::topLeft);
+}
+
+//==============================================================================
 HarmonicsAudioProcessorEditor::HarmonicsAudioProcessorEditor (HarmonicsAudioProcessor& p)
     : AudioProcessorEditor (&p),
       synth (p),
@@ -91,9 +291,10 @@ HarmonicsAudioProcessorEditor::HarmonicsAudioProcessorEditor (HarmonicsAudioProc
       panL (p.engine.tables.panL, 0.0f, 1.0f, "left pan"),
       panR (p.engine.tables.panR, 0.0f, 1.0f, "right pan"),
       windowBar (p.engine.lastSubharmonics),
+      analyser (p.outputTap),
       keyboard (p.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard)
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &amps, &panL, &panR, &windowBar, &keyboard })
+    for (auto* c : std::initializer_list<juce::Component*> { &amps, &panL, &panR, &windowBar, &analyser, &keyboard })
         addAndMakeVisible (c);
 
     const auto makeButtons = [this] (juce::OwnedArray<juce::TextButton>& buttons, const juce::StringArray& names, auto onClick)
@@ -125,7 +326,7 @@ HarmonicsAudioProcessorEditor::HarmonicsAudioProcessorEditor (HarmonicsAudioProc
 
     keyboard.setAvailableRange (24, 108);
 
-    setSize (920, 640);
+    setSize (920, 780);
     startTimerHz (30);
 }
 
@@ -165,6 +366,8 @@ void HarmonicsAudioProcessorEditor::timerCallback()
     panL.repaint();
     panR.repaint();
     windowBar.repaint();
+    analyser.update (synth.getSampleRate(),
+                     juce::MidiMessage::getMidiNoteInHertz (synth.engine.lastNote.load (std::memory_order_relaxed)));
 }
 
 void HarmonicsAudioProcessorEditor::paint (juce::Graphics& g)
@@ -221,4 +424,7 @@ void HarmonicsAudioProcessorEditor::resized()
     area.removeFromTop (12);
 
     layoutRow (area.removeFromTop (44), 6, { &attack, &release, &volume }, &glide);
+    area.removeFromTop (12);
+
+    analyser.setBounds (area);
 }
