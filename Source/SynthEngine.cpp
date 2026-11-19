@@ -301,6 +301,7 @@ void Engine::noteOn (int midiNote, float velocity, const EnvelopeSettings& s)
     pick->serial = ++counter;
     pick->start (midiNote, velocity, tables, s);
     lastSubharmonics.store (pick->subharmonics, std::memory_order_relaxed);
+    lastNote.store (midiNote, std::memory_order_relaxed);
 }
 
 void Engine::noteOff (int midiNote, const EnvelopeSettings& s)

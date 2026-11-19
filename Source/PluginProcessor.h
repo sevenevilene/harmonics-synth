@@ -1,8 +1,23 @@
 #pragma once
 
 #include <juce_audio_utils/juce_audio_utils.h>
+#include <juce_dsp/juce_dsp.h>
 
 #include "SynthEngine.h"
+
+// The most recent output samples, written by the audio thread and read by the
+// spectrum analyser in the editor.
+struct OutputTap
+{
+    static constexpr int size = 1 << 14;
+
+    void push (const float* left, const float* right, int numSamples) noexcept;
+    void copyLatest (int channel, float* dest, int numSamples) const noexcept;
+
+private:
+    std::array<std::array<std::atomic<float>, size>, 2> samples {};
+    std::atomic<int> writePos { 0 };
+};
 
 class HarmonicsAudioProcessor final : public juce::AudioProcessor
 {
@@ -43,6 +58,7 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     harmonics::Engine engine;
     juce::MidiKeyboardState keyboardState;
+    OutputTap outputTap;
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();

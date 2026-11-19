@@ -103,6 +103,7 @@ public:
 
     Tables tables;
     std::atomic<int> lastSubharmonics { 0 }; // window of the last note played, for the display
+    std::atomic<int> lastNote { 60 };        // ... and its MIDI note number
 
 private:
     std::array<Voice, numVoices> voices;
