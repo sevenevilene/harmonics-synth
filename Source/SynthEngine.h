@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 
 // The synth itself, with no JUCE dependency.
@@ -38,11 +39,13 @@ struct Tables
 struct SpectrumSettings
 {
     Spectrum mode = Spectrum::saw;
-    float tilt = 1.0f, center = 8.0f, width = 2.0f, subs = 0.5f, time = 0.0f;
+    float tilt = 1.0f, center = 8.0f, width = 2.0f, subs = 0.5f;
+    float morph = 0.0f; // mod wheel x amount: how far formant and lfo are morphed (0 = not at all)
 };
 
 void fillSpectrum (Table& amps, const SpectrumSettings&);
-void fillPans (Table& panL, Table& panR, PanCurve, float spread, float reach);
+// The levels are read by the spread curve, which balances itself against them.
+void fillPans (Table& panL, Table& panR, PanCurve, float spread, float reach, const Table& amps);
 
 // How many of a note's 129 partials are subharmonics.
 int subharmonicsFor (double frequency);
@@ -60,7 +63,8 @@ public:
     void start (int midiNote, float velocity, const Tables&, const EnvelopeSettings&);
     void release (const EnvelopeSettings&);
     void refresh (const Tables&, const EnvelopeSettings&, bool snap = false);
-    void render (float* left, float* right, int numSamples); // adds, numSamples <= maxChunk
+    // Adds numSamples (<= maxChunk) of output; bend scales every partial's frequency.
+    void render (float* left, float* right, int numSamples, float bend);
 
     static constexpr int maxChunk = 64;
 
@@ -98,6 +102,10 @@ public:
     void noteOff (int midiNote, const EnvelopeSettings&);
     void allNotesOff (const EnvelopeSettings&);
 
+    // Pitch wheel position, -1..1, bending every note by up to bendRange semitones.
+    void setPitchBend (float wheel) { bendTarget = std::exp2 (wheel * bendRange / 12.0f); }
+    static constexpr float bendRange = 2.0f;
+
     // Overwrites left and right with numSamples of output.
     void render (float* left, float* right, int numSamples, const EnvelopeSettings&, float masterVolume);
 
@@ -110,5 +118,6 @@ private:
     double sampleRate = 44100.0;
     uint64_t counter = 0;
     float master = 0.0f;
+    float bendTarget = 1.0f, bend = 1.0f; // frequency ratios
 };
 } // namespace harmonics

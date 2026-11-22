@@ -1,6 +1,6 @@
 # harmonics-synth
 
-An additive synthesizer plugin (AU, VST3 and standalone app) built with [JUCE](https://juce.com/). Each note is a sum of 129 sine waves: subharmonics below the root, the root, and harmonics above it. Their levels and stereo positions live in three tables that you can draw on, fill from a preset, or have an algorithm write and animate.
+An additive synthesizer plugin (AU, VST3 and standalone app) built with [JUCE](https://juce.com/). Each note is a sum of 129 sine waves: subharmonics below the root, the root, and harmonics above it. Their levels and stereo positions live in three tables that you can draw on, fill from a preset, or have an algorithm write and morph.
 
 ![The Harmonics plugin window](docs/screenshot.png)
 
@@ -28,20 +28,46 @@ cmake -S . -B build
 cmake --build build -j 8
 ```
 
+On Linux, install JUCE's dependencies first. Arch (and Omarchy):
+
+```bash
+sudo pacman -S --needed base-devel cmake git pkgconf alsa-lib freetype2 fontconfig libx11 libxcomposite libxcursor libxext libxinerama libxi libxrandr libxrender glu mesa
+```
+
+Debian and Ubuntu:
+
+```bash
+sudo apt install build-essential cmake git pkg-config libasound2-dev libfreetype-dev libfontconfig1-dev libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev libxi-dev libxrandr-dev libxrender-dev libglu1-mesa-dev mesa-common-dev
+```
+
+On Linux the build makes the standalone app and the VST3 (AU is macOS only); copy `Harmonics.vst3` into `~/.vst3`, or configure with `-DHARMONICS_COPY_PLUGINS=ON` to have it copied there after each build.
+
 The results are in `build/Harmonics_artefacts/Release/`: `Standalone/Harmonics.app`, `AU/Harmonics.component` and `VST3/Harmonics.vst3`. To have them copied into `~/Library/Audio/Plug-Ins` after each build so that a DAW finds them, configure with `-DHARMONICS_COPY_PLUGINS=ON`.
 
 ## Using it
 
 Play from a MIDI keyboard or click the on-screen one. Draw on the three graphs with the mouse; click a preset or pan curve to overwrite them. The algorithm sliders (tilt, center, width) only redraw the levels while tilt, formant or lfo is selected, and spread and reach only redraw the pans while a curve other than centre is selected. Moving subs always redraws the levels. The tables are saved with the plugin state.
 
+The presets and algorithms fill the whole -1 to 1 range of the levels graph: the partials a preset uses alternate in sign (root positive), so saw is 1, −½, ⅓ … and triangle 1, −1/9, 1/25 …, the textbook series that make the true waveforms with every partial in sine phase. The levels' sizes are unchanged, so held notes sound the same; only the waveform shape changes (square, for instance, gets a peakier waveform with the same spectrum). The algorithms alternate every partial, so their signs don't flip while they morph.
+
+The pan curves differ from the prototype in three ways, so that the sound doesn't lean to one side:
+
+- **spread** sorts the partials by pitch in octaves (subharmonics towards the left, harmonics towards the right, most of the way out at harmonic *reach*). Instead of pivoting on the root it pivots on the point where the levels balance between the speakers, so the louder harmonics don't pull it right. The pivot follows the levels and is worked out for a note around middle C; low notes with subs turned up can still lean right a little, since they have few subharmonics to balance with.
+- **log-side** still widens every harmonic towards one side, but balances itself the same way: the bass (subharmonics, root and 2×), which log keeps centred, moves towards the other side just far enough to even out the energy, and if even fully out isn't enough (say a formant peak high up) the harmonics narrow a little. It follows the levels too, so morphing with the mod wheel stays balanced.
+- **log** picks each harmonic's side from the Thue–Morse sequence (the parity of the number of 1 bits in *n* − 1) instead of odd left / even right. Neighbours still mostly take turns, but the octaves of the root (4×, 8×, 16×) no longer all land on the right, which made presets like square and bell lean.
+
 The graph above the keyboard is a spectrum analyser showing what actually comes out (left channel bright, right channel faint), from 20 Hz to 20 kHz and 0 dB (full scale) down to -96 dB. The loudest peaks are labelled with their frequency in Hz. The colour shows where a frequency lies relative to the last played note: green at its root, towards blue for harmonics and towards red for subharmonics, reaching full blue and red five octaves away.
 
-All controls are automation parameters: Attack, Release, Volume, Subs, Tilt, Center, Width, Speed, Animate, Spread, Reach, Glide, Spectrum and Pan Curve.
+The pitch and mod wheels sit to the left of the keyboard and follow a MIDI keyboard's wheels too. Drag a wheel up and down; the pitch wheel springs back to the middle when you let go, and double-clicking either wheel resets it. The pitch wheel bends every note by up to 2 semitones. The mod wheel (MIDI CC 1) morphs the formant and lfo algorithms: with the wheel at the bottom they are as drawn by their sliders, and pushing it up sweeps the formant peak up two octaves (center 8 reaches harmonic 32) and takes each lfo harmonic through one or more of its fade cycles. The amount slider scales that: 0 turns the wheel off, 0.5 gives one octave of formant sweep, 4 the most.
+
+Any slider can follow a MIDI controller, such as an expression pedal or a knob: right-click the slider (or its label), choose *Learn MIDI CC* and move the controller. The label then shows its CC number, the slider follows the controller (so a DAW can record it as automation), and the assignment is saved with the plugin. Each slider takes one controller; learning a controller that is already in use moves it to the new slider. *Forget MIDI CC* removes it. CC 1 keeps driving the mod wheel even if you also assign it to a slider.
+
+All other controls are automation parameters: Attack, Release, Volume, Subs, Tilt, Center, Width, Amount, Spread, Reach, Glide, Spectrum and Pan Curve.
 
 ## Files
 
 - `CMakeLists.txt`: the JUCE plugin project
 - `Source/SynthEngine.h/.cpp`: the synth itself (tables, presets, pan curves, voices), plain C++ with no JUCE dependency
 - `Source/PluginProcessor.h/.cpp`: parameters, MIDI, state saving
-- `Source/PluginEditor.h/.cpp`: the window (graphs, buttons, sliders, spectrum analyser, keyboard)
+- `Source/PluginEditor.h/.cpp`: the window (graphs, buttons, sliders, spectrum analyser, wheels, keyboard)
 - `prototype/`: the original Pure Data patch

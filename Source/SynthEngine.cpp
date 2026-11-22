@@ -1,6 +1,7 @@
 #include "SynthEngine.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 
 namespace harmonics
@@ -15,6 +16,7 @@ constexpr float fracScale = 1.0f / (float) (1u << fracBits);
 constexpr float voiceGain = 0.0424f;   // headroom for 8 voices of 129 partials
 constexpr float smoothingMs = 30.0f;   // level changes while a note sounds
 constexpr float masterSmoothingMs = 50.0f;
+constexpr float bendSmoothingMs = 10.0f;     // pitch wheel moves
 
 const std::array<float, sineSize + 1>& sineTable()
 {
@@ -49,13 +51,19 @@ float levelFor (const SpectrumSettings& s, int n)
         case Spectrum::tilt:     return std::pow (fn, -s.tilt);
         case Spectrum::formant:
         {
-            const float peak = s.center * (1.0f + 0.5f * std::sin (s.time));
+            // Morph sweeps the peak up two octaves per unit, evenly in pitch.
+            const float peak = s.center * std::exp2 (2.0f * s.morph);
             const float w = std::max (s.width, 0.01f);
             return std::min (1.0f, 0.3f / fn + std::exp (-(fn - peak) * (fn - peak) / (2.0f * w * w)));
         }
         case Spectrum::lfo:
+        {
+            // Morph moves each harmonic along its own fade cycle: one unit takes
+            // the 2nd harmonic through about one cycle and higher ones through more.
+            const float phase = s.morph * 4.0f * (float) pi;
             return n == 1 ? 1.0f
-                          : std::pow (fn, -s.tilt) * (0.5f + 0.5f * std::sin (s.time * (0.3f + 0.07f * fn) + fn * 2.4f));
+                          : std::pow (fn, -s.tilt) * (0.5f + 0.5f * std::sin (phase * (0.3f + 0.07f * fn) + fn * 2.4f));
+        }
     }
     return 0.0f;
 }
@@ -63,37 +71,127 @@ float levelFor (const SpectrumSettings& s, int n)
 
 void fillSpectrum (Table& amps, const SpectrumSettings& s)
 {
+    // The partials a preset uses alternate in sign, root positive, so every
+    // shape fills the graph's whole -1..1 range symmetrically. With every
+    // partial starting in sine phase these are the textbook series: saw
+    // (1, -1/2, 1/3 ...) and triangle (1, -1/9, 1/25 ...) come out as the true
+    // waveforms. The algorithms count every partial, so their signs stay put
+    // while they morph.
+    std::array<float, numPartials> levels {};
+    int used = 0;
+    for (int n = 1; n <= numPartials; ++n)
+    {
+        const float level = levelFor (s, n);
+        levels[(size_t) n - 1] = (used % 2) && level != 0.0f ? -level : level;
+        if (s.mode >= Spectrum::tilt || level != 0.0f)
+            ++used;
+    }
+
     // Mirrored: subharmonic 1/n gets the same level as harmonic n, scaled by subs.
     for (int i = 0; i < numSlots; ++i)
     {
         const int n = std::abs (i - rootSlot) + 1;
-        amps[(size_t) i].store (levelFor (s, n) * (i < rootSlot ? s.subs : 1.0f), std::memory_order_relaxed);
+        amps[(size_t) i].store (levels[(size_t) n - 1] * (i < rootSlot ? s.subs : 1.0f), std::memory_order_relaxed);
     }
 }
 
-void fillPans (Table& panL, Table& panR, PanCurve curve, float spread, float reach)
+namespace
 {
+// Distance from the root in octaves: log2 n, negative for subharmonics.
+float octavesFromRoot (int d)
+{
+    return d < 0 ? -std::log2 ((float) (1 - d)) : std::log2 ((float) (d + 1));
+}
+
+// Spread and log-side send the harmonics one way, so the louder harmonics would
+// pull the sound to that side. Each has a knob (pivot, or how far the bass
+// moves the other way) that shifts energy back; this finds the setting where
+// a middle-C note's levels balance between the speakers. xFor (d, knob) is the
+// position of the partial d slots from the root, before spread is applied,
+// and the result must lean less towards the harmonics' side as knob rises.
+template <typename Position>
+float balance (const Table& amps, float spread, float lo, float hi, Position xFor)
+{
+    const int first = rootSlot - subharmonicsFor (261.63);
+    std::array<float, numPartials> energy {};
+    double total = 0.0;
+    for (int p = 0; p < numPartials; ++p)
+    {
+        const float a = amps[(size_t) (first + p)].load (std::memory_order_relaxed);
+        energy[(size_t) p] = a * a;
+        total += (double) (a * a);
+    }
+    if (total < 1.0e-12 || std::abs (spread) <= 0.0f)
+        return std::clamp (0.0f, lo, hi); // silent, or no stereo at all: leave it neutral
+
+    const auto lean = [&] (float knob)
+    {
+        double sum = 0.0;
+        for (int p = 0; p < numPartials; ++p)
+            sum += (double) energy[(size_t) p]
+                   * std::sin (xFor (first + p - rootSlot, knob) * std::abs (spread) * (float) pi * 0.5f);
+        return sum;
+    };
+
+    if (lean (lo) <= 0.0) return lo;
+    if (lean (hi) >= 0.0) return hi;
+    for (int step = 0; step < 20; ++step)
+    {
+        const float mid = 0.5f * (lo + hi);
+        (lean (mid) > 0.0 ? lo : hi) = mid;
+    }
+    return 0.5f * (lo + hi);
+}
+} // namespace
+
+void fillPans (Table& panL, Table& panR, PanCurve curve, float spread, float reach, const Table& amps)
+{
+    // Spread: subharmonics left, harmonics right, by octave, most of the way
+    // out (tanh 1.5 = 90%) at harmonic "reach", pivoting where the levels balance.
+    const float spreadWidth = std::max (std::log2 (std::max (reach, 2.0f)), 1.0f) / 1.5f;
+    const auto spreadX = [spreadWidth] (int d, float pivot) { return std::tanh ((octavesFromRoot (d) - pivot) / spreadWidth); };
+
+    // Log: subharmonics, the root and 2x centred; from 3x up the harmonics
+    // widen evenly per octave, fully wide at harmonic "reach".
+    const float logReach = std::log (std::max (reach, 4.0f) / 2.0f);
+    const auto logWidth = [logReach] (int d)
+    {
+        return d > 0 ? std::clamp (std::log ((float) (d + 1) / 2.0f) / logReach, 0.0f, 1.0f) : 0.0f;
+    };
+
+    // Log-side: the log widths, all towards one side. To balance, the knob
+    // (0..2) first moves the centred bass towards the other side (up to fully
+    // out at 1), then narrows the harmonics (down to centre at 2).
+    const auto logSideX = [&logWidth] (int d, float knob)
+    {
+        const float w = logWidth (d) * std::min (1.0f, 2.0f - knob);
+        return w - (1.0f - logWidth (d)) * std::min (knob, 1.0f);
+    };
+
+    const float knob = curve == PanCurve::spread  ? balance (amps, spread, -2.0f, 2.0f, spreadX)
+                     : curve == PanCurve::logSide ? balance (amps, spread, 0.0f, 2.0f, logSideX)
+                                                  : 0.0f;
+
     for (int i = 0; i < numSlots; ++i)
     {
         const int d = i - rootSlot;         // distance from the root, negative = subharmonic
         const int a = std::abs (d);
-        const float side = (a % 2) ? 1.0f : -1.0f;
+        const float side = (a % 2) ? 1.0f : -1.0f;  // alternate: neighbours take turns
         float x = 0.0f;                     // -1 left, 0 centre, 1 right
 
         switch (curve)
         {
             case PanCurve::centre: break;
-            case PanCurve::spread:    x = std::tanh ((float) d / std::max (reach, 1.0f)); break;
+            case PanCurve::spread:    x = spreadX (d, knob); break;
             case PanCurve::alternate: x = std::tanh ((float) a / std::max (reach, 1.0f)) * side; break;
+            case PanCurve::logSide:   x = logSideX (d, knob); break;
             case PanCurve::log:
-            case PanCurve::logSide:
-                // Subharmonics, the root and 2x stay centred; from 3x up the
-                // harmonics widen evenly per octave, fully wide at harmonic "reach".
-                if (d > 0)
-                {
-                    const float width = std::log ((float) (a + 1) / 2.0f) / std::log (std::max (reach, 4.0f) / 2.0f);
-                    x = std::clamp (width, 0.0f, 1.0f) * (curve == PanCurve::log ? side : 1.0f);
-                }
+                // Each harmonic's side comes from the Thue-Morse sequence (the
+                // parity of the bits of n - 1): neighbours mostly take turns,
+                // and unlike plain odd/even turns the octaves of the root don't
+                // all land on one side, so smooth and sparse spectra alike stay
+                // balanced.
+                x = logWidth (d) * ((std::popcount ((unsigned) a) % 2) ? 1.0f : -1.0f);
                 break;
         }
 
@@ -202,7 +300,7 @@ void Voice::refresh (const Tables& tables, const EnvelopeSettings& s, bool snap)
     }
 }
 
-void Voice::render (float* left, float* right, int n)
+void Voice::render (float* left, float* right, int n, float bend)
 {
     float sumL[maxChunk] = {}, sumR[maxChunk] = {};
     const auto& sine = sineTable();
@@ -223,7 +321,7 @@ void Voice::render (float* left, float* right, int n)
         float l = advance (gainL[i]), r = advance (gainR[i]);
         const float l1 = gainL[i].value, r1 = gainR[i].value;
         uint32_t ph = phase[i];
-        const uint32_t inc = increment[i];
+        const uint32_t inc = bend == 1.0f ? increment[i] : (uint32_t) ((float) increment[i] * bend);
         phase[i] = ph + inc * (uint32_t) n;
 
         if (l == 0.0f && l1 == 0.0f && r == 0.0f && r1 == 0.0f)
@@ -275,7 +373,7 @@ void Voice::render (float* left, float* right, int n)
 Engine::Engine()
 {
     fillSpectrum (tables.amps, {});
-    fillPans (tables.panL, tables.panR, PanCurve::log, 0.8f, 16.0f);
+    fillPans (tables.panL, tables.panR, PanCurve::log, 0.8f, 16.0f, tables.amps);
 }
 
 void Engine::prepare (double newSampleRate)
@@ -331,17 +429,23 @@ void Engine::render (float* left, float* right, int numSamples, const EnvelopeSe
     std::fill_n (right, numSamples, 0.0f);
 
     const float masterStep = 1.0f / (float) std::max (1.0, masterSmoothingMs * 0.001 * sampleRate);
+    const float bendCoeff = 1.0f - std::exp (-(float) Voice::maxChunk / (float) (bendSmoothingMs * 0.001 * sampleRate));
 
     for (int pos = 0; pos < numSamples; pos += Voice::maxChunk)
     {
         const int n = std::min (Voice::maxChunk, numSamples - pos);
+
+        // The bend glides towards the wheel once per chunk, landing exactly on it.
+        bend += (bendTarget - bend) * bendCoeff;
+        if (std::abs (bendTarget - bend) < 1.0e-5f)
+            bend = bendTarget;
 
         for (auto& v : voices)
         {
             if (! v.active)
                 continue;
             v.refresh (tables, s); // follow the tables while the note sounds
-            v.render (left + pos, right + pos, n);
+            v.render (left + pos, right + pos, n, bend);
         }
 
         for (int i = pos; i < pos + n; ++i)

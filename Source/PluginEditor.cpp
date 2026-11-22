@@ -84,6 +84,84 @@ void WindowBar::paint (juce::Graphics& g)
 }
 
 //==============================================================================
+WheelComponent::WheelComponent (std::atomic<float>& v, float minimum, float maximum, bool springBack, juce::String name)
+    : value (v), lo (minimum), hi (maximum), springs (springBack), title (std::move (name))
+{
+    setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
+}
+
+juce::Rectangle<float> WheelComponent::wheelArea() const
+{
+    return getLocalBounds().toFloat().withTrimmedBottom (16.0f);
+}
+
+void WheelComponent::set (float v)
+{
+    value.store (juce::jlimit (lo, hi, v), std::memory_order_relaxed);
+    repaint();
+}
+
+void WheelComponent::paint (juce::Graphics& g)
+{
+    const auto area = wheelArea();
+    const float t = (juce::jlimit (lo, hi, value.load (std::memory_order_relaxed)) - lo) / (hi - lo);
+    const float thumbHeight = 8.0f;
+    const float y = area.getBottom() - thumbHeight * 0.5f - t * (area.getHeight() - thumbHeight);
+
+    g.setColour (panel);
+    g.fillRoundedRectangle (area, 4.0f);
+
+    // The wheel's ridges, shifting as it turns.
+    g.setColour (faint);
+    const float spacing = 6.0f;
+    for (float ridge = std::fmod (y - area.getY(), spacing); ridge < area.getHeight(); ridge += spacing)
+        g.fillRect (area.getX() + 4.0f, area.getY() + ridge, area.getWidth() - 8.0f, 1.0f);
+
+    if (springs) // the centre mark
+    {
+        g.setColour (textColour.withAlpha (0.4f));
+        g.fillRect (area.getX(), std::round (area.getCentreY()), 3.0f, 1.0f);
+        g.fillRect (area.getRight() - 3.0f, std::round (area.getCentreY()), 3.0f, 1.0f);
+    }
+
+    // The part of the travel the wheel has moved through from where it rests.
+    const float rest = area.getBottom() - thumbHeight * 0.5f
+                       - (resting() - lo) / (hi - lo) * (area.getHeight() - thumbHeight);
+    g.setColour (accent.withAlpha (0.25f));
+    g.fillRect (area.getX() + 2.0f, juce::jmin (y, rest), area.getWidth() - 4.0f, std::abs (y - rest));
+
+    g.setColour (accent);
+    g.fillRoundedRectangle (area.getX() + 2.0f, y - thumbHeight * 0.5f, area.getWidth() - 4.0f, thumbHeight, 2.0f);
+
+    g.setColour (textColour);
+    g.setFont (12.0f);
+    g.drawText (title, getLocalBounds().removeFromBottom (14), juce::Justification::centred);
+}
+
+void WheelComponent::mouseDown (const juce::MouseEvent&)
+{
+    dragStartValue = value.load (std::memory_order_relaxed);
+}
+
+void WheelComponent::mouseDrag (const juce::MouseEvent& e)
+{
+    // Relative, like a real wheel: dragging the full height covers the whole range.
+    const float travel = juce::jmax (1.0f, wheelArea().getHeight() - 8.0f);
+    set (dragStartValue - (float) e.getDistanceFromDragStartY() / travel * (hi - lo));
+}
+
+void WheelComponent::mouseUp (const juce::MouseEvent&)
+{
+    if (springs)
+        set (resting());
+}
+
+void WheelComponent::mouseDoubleClick (const juce::MouseEvent&)
+{
+    set (resting());
+}
+
+//==============================================================================
 void SpectrumAnalyser::update (double sampleRate, double rootFrequency)
 {
     rate = sampleRate > 0.0 ? sampleRate : 44100.0;
@@ -292,9 +370,11 @@ HarmonicsAudioProcessorEditor::HarmonicsAudioProcessorEditor (HarmonicsAudioProc
       panR (p.engine.tables.panR, 0.0f, 1.0f, "right pan"),
       windowBar (p.engine.lastSubharmonics),
       analyser (p.outputTap),
+      pitchWheel (p.pitchWheel, -1.0f, 1.0f, true, "pitch"),
+      modWheel (p.modWheel, 0.0f, 1.0f, false, "mod"),
       keyboard (p.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard)
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &amps, &panL, &panR, &windowBar, &analyser, &keyboard })
+    for (auto* c : std::initializer_list<juce::Component*> { &amps, &panL, &panR, &windowBar, &analyser, &pitchWheel, &modWheel, &keyboard })
         addAndMakeVisible (c);
 
     const auto makeButtons = [this] (juce::OwnedArray<juce::TextButton>& buttons, const juce::StringArray& names, auto onClick)
@@ -314,14 +394,13 @@ HarmonicsAudioProcessorEditor::HarmonicsAudioProcessorEditor (HarmonicsAudioProc
     addControl (tilt, "tilt", "tilt (tilt + lfo)");
     addControl (center, "center", "center (formant)");
     addControl (width, "width", "width (formant)");
-    addControl (speed, "speed", "speed (animate)");
+    addControl (amount, "amount", "amount (mod wheel)");
     addControl (subs, "subs", "subs");
     addControl (spread, "spread", "spread");
     addControl (reach, "reach", "reach (partials)");
     addControl (attack, "attack", "attack (ms)");
     addControl (release, "release", "release (ms)");
     addControl (volume, "volume", "volume");
-    addToggle (animate, animateAttachment, "animate");
     addToggle (glide, glideAttachment, "glide");
 
     keyboard.setAvailableRange (24, 108);
@@ -330,9 +409,30 @@ HarmonicsAudioProcessorEditor::HarmonicsAudioProcessorEditor (HarmonicsAudioProc
     startTimerHz (30);
 }
 
+void HarmonicsAudioProcessorEditor::LearnSlider::mouseDown (const juce::MouseEvent& e)
+{
+    menuClick = e.mods.isPopupMenu();
+    if (menuClick)
+    {
+        if (onMenu)
+            onMenu();
+        return;
+    }
+    juce::Slider::mouseDown (e);
+}
+
 void HarmonicsAudioProcessorEditor::addControl (Control& c, const juce::String& parameterID, const juce::String& text)
 {
+    c.text = text;
+    c.learnIndex = HarmonicsAudioProcessor::learnableIDs.indexOf (parameterID);
     c.label.setText (text, juce::dontSendNotification);
+    if (c.learnIndex >= 0)
+    {
+        c.slider.onMenu = [this, &c] { showLearnMenu (c); };
+        c.label.addMouseListener (this, false);
+        c.label.setTooltip ("Right-click to assign a MIDI controller");
+        c.slider.setTooltip ("Right-click to assign a MIDI controller");
+    }
     c.label.setColour (juce::Label::textColourId, textColour);
     c.slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 18);
     c.slider.setColour (juce::Slider::thumbColourId, accent);
@@ -341,6 +441,32 @@ void HarmonicsAudioProcessorEditor::addControl (Control& c, const juce::String& 
     addAndMakeVisible (c.label);
     addAndMakeVisible (c.slider);
     c.attachment = std::make_unique<APVTS::SliderAttachment> (synth.apvts, parameterID, c.slider);
+}
+
+void HarmonicsAudioProcessorEditor::showLearnMenu (Control& c)
+{
+    const int index = c.learnIndex;
+    const int cc = synth.controllerFor (index);
+    const bool learning = synth.learningIndex() == index;
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader (c.text);
+    if (learning)
+        menu.addItem ("Cancel learning", [this] { synth.cancelLearning(); });
+    else
+        menu.addItem (cc >= 0 ? "Learn another MIDI CC (now CC " + juce::String (cc) + ")" : "Learn MIDI CC",
+                      [this, index] { synth.startLearning (index); });
+    menu.addItem ("Forget MIDI CC", cc >= 0, false, [this, index] { synth.forgetController (index); });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&c.slider));
+}
+
+void HarmonicsAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
+{
+    if (! e.mods.isPopupMenu())
+        return;
+    for (auto* c : { &tilt, &center, &width, &amount, &subs, &spread, &reach, &attack, &release, &volume })
+        if (e.eventComponent == &c->label)
+            showLearnMenu (*c);
 }
 
 void HarmonicsAudioProcessorEditor::addToggle (juce::ToggleButton& b, std::unique_ptr<APVTS::ButtonAttachment>& attachment,
@@ -362,10 +488,29 @@ void HarmonicsAudioProcessorEditor::timerCallback()
     for (int i = 0; i < panButtons.size(); ++i)
         panButtons[i]->setToggleState (i == panCurve, juce::dontSendNotification);
 
+    // Show each control's MIDI controller, or that it is waiting for one.
+    const int learning = synth.learningIndex();
+    for (auto* c : { &tilt, &center, &width, &amount, &subs, &spread, &reach, &attack, &release, &volume })
+    {
+        if (c->learnIndex < 0)
+            continue;
+        const int cc = synth.controllerFor (c->learnIndex);
+        const auto text = learning == c->learnIndex ? c->text + "  (learning...)"
+                          : cc >= 0                 ? c->text + "  [CC " + juce::String (cc) + "]"
+                                                    : c->text;
+        if (c->label.getText() != text)
+        {
+            c->label.setText (text, juce::dontSendNotification);
+            c->label.setColour (juce::Label::textColourId, learning == c->learnIndex ? accent : textColour);
+        }
+    }
+
     amps.repaint();
     panL.repaint();
     panR.repaint();
     windowBar.repaint();
+    pitchWheel.repaint();
+    modWheel.repaint();
     analyser.update (synth.getSampleRate(),
                      juce::MidiMessage::getMidiNoteInHertz (synth.engine.lastNote.load (std::memory_order_relaxed)));
 }
@@ -379,7 +524,12 @@ void HarmonicsAudioProcessorEditor::resized()
 {
     auto area = getLocalBounds().reduced (12);
 
-    keyboard.setBounds (area.removeFromBottom (70));
+    auto bottom = area.removeFromBottom (70);
+    pitchWheel.setBounds (bottom.removeFromLeft (28));
+    bottom.removeFromLeft (6);
+    modWheel.setBounds (bottom.removeFromLeft (28));
+    bottom.removeFromLeft (10);
+    keyboard.setBounds (bottom);
     keyboard.setKeyWidth ((float) keyboard.getWidth() / 50.0f); // C1..C8 = 50 white keys
     area.removeFromBottom (10);
 
@@ -415,7 +565,7 @@ void HarmonicsAudioProcessorEditor::resized()
 
     layoutButtons (area.removeFromTop (26), spectrumButtons, area.getWidth() / spectrumButtons.size());
     area.removeFromTop (8);
-    layoutRow (area.removeFromTop (44), 6, { &tilt, &center, &width, &speed, &subs }, &animate);
+    layoutRow (area.removeFromTop (44), 6, { &tilt, &center, &width, &amount, &subs }, nullptr);
     area.removeFromTop (12);
 
     auto panRow = area.removeFromTop (44);
