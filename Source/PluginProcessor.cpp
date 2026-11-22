@@ -127,9 +127,7 @@ HarmonicsAudioProcessor::Controls HarmonicsAudioProcessor::readControls() const
 {
     return { spectrum->load(), tilt->load(), center->load(), width->load(),
              subs->load(), panCurve->load(), spread->load(), reach->load(),
-             // A full mod wheel moves the formant and lfo algorithms a quarter
-             // turn along, times amount.
-             modWheel.load() * amount->load() * juce::MathConstants<float>::halfPi };
+             modWheel.load() * amount->load() };
 }
 
 // Rewrites the tables when a preset, pan curve or one of their sliders changed,

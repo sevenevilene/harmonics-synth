@@ -51,13 +51,19 @@ float levelFor (const SpectrumSettings& s, int n)
         case Spectrum::tilt:     return std::pow (fn, -s.tilt);
         case Spectrum::formant:
         {
-            const float peak = s.center * (1.0f + 0.5f * std::sin (s.time));
+            // Morph sweeps the peak up two octaves per unit, evenly in pitch.
+            const float peak = s.center * std::exp2 (2.0f * s.morph);
             const float w = std::max (s.width, 0.01f);
             return std::min (1.0f, 0.3f / fn + std::exp (-(fn - peak) * (fn - peak) / (2.0f * w * w)));
         }
         case Spectrum::lfo:
+        {
+            // Morph moves each harmonic along its own fade cycle: one unit takes
+            // the 2nd harmonic through about one cycle and higher ones through more.
+            const float phase = s.morph * 4.0f * (float) pi;
             return n == 1 ? 1.0f
-                          : std::pow (fn, -s.tilt) * (0.5f + 0.5f * std::sin (s.time * (0.3f + 0.07f * fn) + fn * 2.4f));
+                          : std::pow (fn, -s.tilt) * (0.5f + 0.5f * std::sin (phase * (0.3f + 0.07f * fn) + fn * 2.4f));
+        }
     }
     return 0.0f;
 }
