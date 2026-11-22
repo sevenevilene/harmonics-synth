@@ -112,7 +112,7 @@ private:
     WindowBar windowBar;
     SpectrumAnalyser analyser;
     juce::OwnedArray<juce::TextButton> spectrumButtons, panButtons;
-    Control tilt, center, width, speed, subs, spread, reach, attack, release, volume;
+    Control tilt, center, width, amount, subs, spread, reach, attack, release, volume;
     juce::ToggleButton glide { "glide" };
     std::unique_ptr<APVTS::ButtonAttachment> glideAttachment;
     WheelComponent pitchWheel, modWheel;

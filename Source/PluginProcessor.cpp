@@ -78,7 +78,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout HarmonicsAudioProcessor::cre
         std::make_unique<Float> (id ("tilt"), "Tilt", Range (0.0f, 3.0f), 1.0f, decimals (2)),
         std::make_unique<Float> (id ("center"), "Center", Range (1.0f, 32.0f), 8.0f, decimals (1)),
         std::make_unique<Float> (id ("width"), "Width", Range (0.5f, 8.0f), 2.0f, decimals (2)),
-        std::make_unique<Float> (id ("speed"), "Speed", Range (0.0f, 4.0f), 1.0f, decimals (2)),
+        std::make_unique<Float> (id ("amount"), "Amount", Range (0.0f, 4.0f), 1.0f, decimals (2)),
         std::make_unique<Float> (id ("spread"), "Spread", Range (-1.0f, 1.0f), 0.8f, decimals (2)),
         std::make_unique<Float> (id ("reach"), "Reach", logRange (1.0f, 64.0f), 16.0f, decimals (1)),
         std::make_unique<juce::AudioParameterBool> (id ("glide"), "Glide", false),
@@ -98,7 +98,7 @@ HarmonicsAudioProcessor::HarmonicsAudioProcessor()
     tilt = apvts.getRawParameterValue ("tilt");
     center = apvts.getRawParameterValue ("center");
     width = apvts.getRawParameterValue ("width");
-    speed = apvts.getRawParameterValue ("speed");
+    amount = apvts.getRawParameterValue ("amount");
     spread = apvts.getRawParameterValue ("spread");
     reach = apvts.getRawParameterValue ("reach");
     glide = apvts.getRawParameterValue ("glide");
@@ -126,14 +126,17 @@ EnvelopeSettings HarmonicsAudioProcessor::envelopeSettings() const
 HarmonicsAudioProcessor::Controls HarmonicsAudioProcessor::readControls() const
 {
     return { spectrum->load(), tilt->load(), center->load(), width->load(),
-             subs->load(), panCurve->load(), spread->load(), reach->load() };
+             subs->load(), panCurve->load(), spread->load(), reach->load(),
+             // A full mod wheel moves the formant and lfo algorithms a quarter
+             // turn along, times amount.
+             modWheel.load() * amount->load() * juce::MathConstants<float>::halfPi };
 }
 
 // Rewrites the tables when a preset, pan curve or one of their sliders changed,
 // following the prototype's rules: the algorithm sliders only redraw while an
 // algorithm is selected and the pan sliders only while a curve is selected, so
 // that hand-drawn tables are kept.
-void HarmonicsAudioProcessor::updateTables (int numSamples)
+void HarmonicsAudioProcessor::updateTables()
 {
     const juce::SpinLock::ScopedTryLockType lock (stateLock);
     if (! lock.isLocked())
@@ -159,7 +162,8 @@ void HarmonicsAudioProcessor::updateTables (int numSamples)
         const auto changed = [] (float a, float b) { return ! juce::exactlyEqual (a, b); };
         fillAmps = fillAmps || changed (now.spectrum, seen.spectrum) || changed (now.subs, seen.subs)
                    || (mode >= Spectrum::tilt && (changed (now.tilt, seen.tilt) || changed (now.center, seen.center)
-                                                  || changed (now.width, seen.width)));
+                                                  || changed (now.width, seen.width)))
+                   || (mode >= Spectrum::formant && changed (now.morph, seen.morph));
         fillPan = fillPan || changed (now.panCurve, seen.panCurve)
                   || (curve != PanCurve::centre && (changed (now.spread, seen.spread) || changed (now.reach, seen.reach)));
     }
@@ -167,20 +171,8 @@ void HarmonicsAudioProcessor::updateTables (int numSamples)
     seen = now;
     seenValid = true;
 
-    // The mod wheel scales the animation speed; at zero the animation holds still.
-    if (const float rate = speed->load() * modWheel.load(); rate > 0.0f)
-    {
-        animationCountdown -= numSamples;
-        while (animationCountdown <= 0.0)
-        {
-            animationCountdown += 0.03 * sampleRate;
-            animationTime += (double) rate * 0.03;
-            fillAmps = fillAmps || mode >= Spectrum::formant;
-        }
-    }
-
     if (fillAmps)
-        fillSpectrum (engine.tables.amps, { mode, now.tilt, now.center, now.width, now.subs, (float) animationTime });
+        fillSpectrum (engine.tables.amps, { mode, now.tilt, now.center, now.width, now.subs, now.morph });
     if (fillPan)
         fillPans (engine.tables.panL, engine.tables.panR, curve, now.spread, now.reach);
 }
@@ -209,7 +201,7 @@ void HarmonicsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             pitchWheel = modWheel = 0.0f;
     }
 
-    updateTables (numSamples);
+    updateTables();
     keyboardState.processNextMidiBuffer (midi, 0, numSamples, true);
     engine.setPitchBend (pitchWheel.load());
 

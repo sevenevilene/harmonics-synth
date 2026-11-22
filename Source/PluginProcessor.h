@@ -57,7 +57,7 @@ public:
 
     // The wheels, set by incoming MIDI (pitch bend, CC 1) and by the on-screen
     // wheels; whichever moved last wins. Pitch -1..1, mod 0..1. The mod wheel
-    // sets how fast the formant and lfo algorithms animate.
+    // morphs the formant and lfo algorithms.
     std::atomic<float> pitchWheel { 0.0f }, modWheel { 0.0f };
 
     juce::AudioProcessorValueTreeState apvts;
@@ -67,23 +67,23 @@ public:
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
-    void updateTables (int numSamples);
+    void updateTables();
     harmonics::EnvelopeSettings envelopeSettings() const;
 
     struct Controls
     {
-        float spectrum, tilt, center, width, subs, panCurve, spread, reach;
+        float spectrum, tilt, center, width, subs, panCurve, spread, reach, morph;
     };
     Controls readControls() const;
 
-    std::atomic<float>* attack, *release, *volume, *subs, *tilt, *center, *width, *speed,
+    std::atomic<float>* attack, *release, *volume, *subs, *tilt, *center, *width, *amount,
                       *spread, *reach, *glide, *spectrum, *panCurve;
 
     Controls seen {};
     bool seenValid = false;
     std::atomic<bool> spectrumRefill { false }, panRefill { false }, keepTables { false };
     juce::SpinLock stateLock;
-    double sampleRate = 44100.0, animationTime = 0.0, animationCountdown = 0.0;
+    double sampleRate = 44100.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HarmonicsAudioProcessor)
 };

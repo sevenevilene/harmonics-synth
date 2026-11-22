@@ -39,7 +39,7 @@ struct Tables
 struct SpectrumSettings
 {
     Spectrum mode = Spectrum::saw;
-    float tilt = 1.0f, center = 8.0f, width = 2.0f, subs = 0.5f, time = 0.0f;
+    float tilt = 1.0f, center = 8.0f, width = 2.0f, subs = 0.5f, time = 0.0f; // time: how far formant and lfo are morphed
 };
 
 void fillSpectrum (Table& amps, const SpectrumSettings&);

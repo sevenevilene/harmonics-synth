@@ -394,7 +394,7 @@ HarmonicsAudioProcessorEditor::HarmonicsAudioProcessorEditor (HarmonicsAudioProc
     addControl (tilt, "tilt", "tilt (tilt + lfo)");
     addControl (center, "center", "center (formant)");
     addControl (width, "width", "width (formant)");
-    addControl (speed, "speed", "speed (x mod wheel)");
+    addControl (amount, "amount", "amount (mod wheel)");
     addControl (subs, "subs", "subs");
     addControl (spread, "spread", "spread");
     addControl (reach, "reach", "reach (partials)");
@@ -501,7 +501,7 @@ void HarmonicsAudioProcessorEditor::resized()
 
     layoutButtons (area.removeFromTop (26), spectrumButtons, area.getWidth() / spectrumButtons.size());
     area.removeFromTop (8);
-    layoutRow (area.removeFromTop (44), 6, { &tilt, &center, &width, &speed, &subs }, nullptr);
+    layoutRow (area.removeFromTop (44), 6, { &tilt, &center, &width, &amount, &subs }, nullptr);
     area.removeFromTop (12);
 
     auto panRow = area.removeFromTop (44);
