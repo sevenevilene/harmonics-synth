@@ -171,8 +171,8 @@ void HarmonicsAudioProcessor::updateTables()
     seen = now;
     seenValid = true;
 
-    // Spread balances itself against the levels, so it follows them.
-    fillPan = fillPan || (fillAmps && curve == PanCurve::spread);
+    // Spread and log-side balance themselves against the levels, so they follow them.
+    fillPan = fillPan || (fillAmps && (curve == PanCurve::spread || curve == PanCurve::logSide));
 
     if (fillAmps)
         fillSpectrum (engine.tables.amps, { mode, now.tilt, now.center, now.width, now.subs, now.morph });

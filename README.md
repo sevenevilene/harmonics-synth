@@ -34,9 +34,10 @@ The results are in `build/Harmonics_artefacts/Release/`: `Standalone/Harmonics.a
 
 Play from a MIDI keyboard or click the on-screen one. Draw on the three graphs with the mouse; click a preset or pan curve to overwrite them. The algorithm sliders (tilt, center, width) only redraw the levels while tilt, formant or lfo is selected, and spread and reach only redraw the pans while a curve other than centre is selected. Moving subs always redraws the levels. The tables are saved with the plugin state.
 
-The pan curves differ from the prototype in two ways, so that the sound doesn't lean to one side:
+The pan curves differ from the prototype in three ways, so that the sound doesn't lean to one side:
 
 - **spread** sorts the partials by pitch in octaves (subharmonics towards the left, harmonics towards the right, most of the way out at harmonic *reach*). Instead of pivoting on the root it pivots on the point where the levels balance between the speakers, so the louder harmonics don't pull it right. The pivot follows the levels and is worked out for a note around middle C; low notes with subs turned up can still lean right a little, since they have few subharmonics to balance with.
+- **log-side** still widens every harmonic towards one side, but balances itself the same way: the bass (subharmonics, root and 2×), which log keeps centred, moves towards the other side just far enough to even out the energy, and if even fully out isn't enough (say a formant peak high up) the harmonics narrow a little. It follows the levels too, so morphing with the mod wheel stays balanced.
 - **log** picks each harmonic's side from the Thue–Morse sequence (the parity of the number of 1 bits in *n* − 1) instead of odd left / even right. Neighbours still mostly take turns, but the octaves of the root (4×, 8×, 16×) no longer all land on the right, which made presets like square and bell lean.
 
 The graph above the keyboard is a spectrum analyser showing what actually comes out (left channel bright, right channel faint), from 20 Hz to 20 kHz and 0 dB (full scale) down to -96 dB. The loudest peaks are labelled with their frequency in Hz. The colour shows where a frequency lies relative to the last played note: green at its root, towards blue for harmonics and towards red for subharmonics, reaching full blue and red five octaves away.
