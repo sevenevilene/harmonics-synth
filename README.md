@@ -36,12 +36,14 @@ Play from a MIDI keyboard or click the on-screen one. Draw on the three graphs w
 
 The graph above the keyboard is a spectrum analyser showing what actually comes out (left channel bright, right channel faint), from 20 Hz to 20 kHz and 0 dB (full scale) down to -96 dB. The loudest peaks are labelled with their frequency in Hz. The colour shows where a frequency lies relative to the last played note: green at its root, towards blue for harmonics and towards red for subharmonics, reaching full blue and red five octaves away.
 
-All controls are automation parameters: Attack, Release, Volume, Subs, Tilt, Center, Width, Speed, Animate, Spread, Reach, Glide, Spectrum and Pan Curve.
+The pitch and mod wheels sit to the left of the keyboard and follow a MIDI keyboard's wheels too. Drag a wheel up and down; the pitch wheel springs back to the middle when you let go, and double-clicking either wheel resets it. The pitch wheel bends every note by up to 2 semitones. The mod wheel (MIDI CC 1) animates the formant and lfo algorithms: the animation runs at speed × mod wheel and holds still with the wheel at the bottom.
+
+All other controls are automation parameters: Attack, Release, Volume, Subs, Tilt, Center, Width, Speed, Spread, Reach, Glide, Spectrum and Pan Curve.
 
 ## Files
 
 - `CMakeLists.txt`: the JUCE plugin project
 - `Source/SynthEngine.h/.cpp`: the synth itself (tables, presets, pan curves, voices), plain C++ with no JUCE dependency
 - `Source/PluginProcessor.h/.cpp`: parameters, MIDI, state saving
-- `Source/PluginEditor.h/.cpp`: the window (graphs, buttons, sliders, spectrum analyser, keyboard)
+- `Source/PluginEditor.h/.cpp`: the window (graphs, buttons, sliders, spectrum analyser, wheels, keyboard)
 - `prototype/`: the original Pure Data patch

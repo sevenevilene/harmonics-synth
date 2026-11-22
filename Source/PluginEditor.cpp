@@ -84,6 +84,84 @@ void WindowBar::paint (juce::Graphics& g)
 }
 
 //==============================================================================
+WheelComponent::WheelComponent (std::atomic<float>& v, float minimum, float maximum, bool springBack, juce::String name)
+    : value (v), lo (minimum), hi (maximum), springs (springBack), title (std::move (name))
+{
+    setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
+}
+
+juce::Rectangle<float> WheelComponent::wheelArea() const
+{
+    return getLocalBounds().toFloat().withTrimmedBottom (16.0f);
+}
+
+void WheelComponent::set (float v)
+{
+    value.store (juce::jlimit (lo, hi, v), std::memory_order_relaxed);
+    repaint();
+}
+
+void WheelComponent::paint (juce::Graphics& g)
+{
+    const auto area = wheelArea();
+    const float t = (juce::jlimit (lo, hi, value.load (std::memory_order_relaxed)) - lo) / (hi - lo);
+    const float thumbHeight = 8.0f;
+    const float y = area.getBottom() - thumbHeight * 0.5f - t * (area.getHeight() - thumbHeight);
+
+    g.setColour (panel);
+    g.fillRoundedRectangle (area, 4.0f);
+
+    // The wheel's ridges, shifting as it turns.
+    g.setColour (faint);
+    const float spacing = 6.0f;
+    for (float ridge = std::fmod (y - area.getY(), spacing); ridge < area.getHeight(); ridge += spacing)
+        g.fillRect (area.getX() + 4.0f, area.getY() + ridge, area.getWidth() - 8.0f, 1.0f);
+
+    if (springs) // the centre mark
+    {
+        g.setColour (textColour.withAlpha (0.4f));
+        g.fillRect (area.getX(), std::round (area.getCentreY()), 3.0f, 1.0f);
+        g.fillRect (area.getRight() - 3.0f, std::round (area.getCentreY()), 3.0f, 1.0f);
+    }
+
+    // The part of the travel the wheel has moved through from where it rests.
+    const float rest = area.getBottom() - thumbHeight * 0.5f
+                       - (resting() - lo) / (hi - lo) * (area.getHeight() - thumbHeight);
+    g.setColour (accent.withAlpha (0.25f));
+    g.fillRect (area.getX() + 2.0f, juce::jmin (y, rest), area.getWidth() - 4.0f, std::abs (y - rest));
+
+    g.setColour (accent);
+    g.fillRoundedRectangle (area.getX() + 2.0f, y - thumbHeight * 0.5f, area.getWidth() - 4.0f, thumbHeight, 2.0f);
+
+    g.setColour (textColour);
+    g.setFont (12.0f);
+    g.drawText (title, getLocalBounds().removeFromBottom (14), juce::Justification::centred);
+}
+
+void WheelComponent::mouseDown (const juce::MouseEvent&)
+{
+    dragStartValue = value.load (std::memory_order_relaxed);
+}
+
+void WheelComponent::mouseDrag (const juce::MouseEvent& e)
+{
+    // Relative, like a real wheel: dragging the full height covers the whole range.
+    const float travel = juce::jmax (1.0f, wheelArea().getHeight() - 8.0f);
+    set (dragStartValue - (float) e.getDistanceFromDragStartY() / travel * (hi - lo));
+}
+
+void WheelComponent::mouseUp (const juce::MouseEvent&)
+{
+    if (springs)
+        set (resting());
+}
+
+void WheelComponent::mouseDoubleClick (const juce::MouseEvent&)
+{
+    set (resting());
+}
+
+//==============================================================================
 void SpectrumAnalyser::update (double sampleRate, double rootFrequency)
 {
     rate = sampleRate > 0.0 ? sampleRate : 44100.0;
@@ -292,9 +370,11 @@ HarmonicsAudioProcessorEditor::HarmonicsAudioProcessorEditor (HarmonicsAudioProc
       panR (p.engine.tables.panR, 0.0f, 1.0f, "right pan"),
       windowBar (p.engine.lastSubharmonics),
       analyser (p.outputTap),
+      pitchWheel (p.pitchWheel, -1.0f, 1.0f, true, "pitch"),
+      modWheel (p.modWheel, 0.0f, 1.0f, false, "mod"),
       keyboard (p.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard)
 {
-    for (auto* c : std::initializer_list<juce::Component*> { &amps, &panL, &panR, &windowBar, &analyser, &keyboard })
+    for (auto* c : std::initializer_list<juce::Component*> { &amps, &panL, &panR, &windowBar, &analyser, &pitchWheel, &modWheel, &keyboard })
         addAndMakeVisible (c);
 
     const auto makeButtons = [this] (juce::OwnedArray<juce::TextButton>& buttons, const juce::StringArray& names, auto onClick)
@@ -314,14 +394,13 @@ HarmonicsAudioProcessorEditor::HarmonicsAudioProcessorEditor (HarmonicsAudioProc
     addControl (tilt, "tilt", "tilt (tilt + lfo)");
     addControl (center, "center", "center (formant)");
     addControl (width, "width", "width (formant)");
-    addControl (speed, "speed", "speed (animate)");
+    addControl (speed, "speed", "speed (x mod wheel)");
     addControl (subs, "subs", "subs");
     addControl (spread, "spread", "spread");
     addControl (reach, "reach", "reach (partials)");
     addControl (attack, "attack", "attack (ms)");
     addControl (release, "release", "release (ms)");
     addControl (volume, "volume", "volume");
-    addToggle (animate, animateAttachment, "animate");
     addToggle (glide, glideAttachment, "glide");
 
     keyboard.setAvailableRange (24, 108);
@@ -366,6 +445,8 @@ void HarmonicsAudioProcessorEditor::timerCallback()
     panL.repaint();
     panR.repaint();
     windowBar.repaint();
+    pitchWheel.repaint();
+    modWheel.repaint();
     analyser.update (synth.getSampleRate(),
                      juce::MidiMessage::getMidiNoteInHertz (synth.engine.lastNote.load (std::memory_order_relaxed)));
 }
@@ -379,7 +460,12 @@ void HarmonicsAudioProcessorEditor::resized()
 {
     auto area = getLocalBounds().reduced (12);
 
-    keyboard.setBounds (area.removeFromBottom (70));
+    auto bottom = area.removeFromBottom (70);
+    pitchWheel.setBounds (bottom.removeFromLeft (28));
+    bottom.removeFromLeft (6);
+    modWheel.setBounds (bottom.removeFromLeft (28));
+    bottom.removeFromLeft (10);
+    keyboard.setBounds (bottom);
     keyboard.setKeyWidth ((float) keyboard.getWidth() / 50.0f); // C1..C8 = 50 white keys
     area.removeFromBottom (10);
 
@@ -415,7 +501,7 @@ void HarmonicsAudioProcessorEditor::resized()
 
     layoutButtons (area.removeFromTop (26), spectrumButtons, area.getWidth() / spectrumButtons.size());
     area.removeFromTop (8);
-    layoutRow (area.removeFromTop (44), 6, { &tilt, &center, &width, &speed, &subs }, &animate);
+    layoutRow (area.removeFromTop (44), 6, { &tilt, &center, &width, &speed, &subs }, nullptr);
     area.removeFromTop (12);
 
     auto panRow = area.removeFromTop (44);

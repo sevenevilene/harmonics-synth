@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 
 // The synth itself, with no JUCE dependency.
@@ -60,7 +61,8 @@ public:
     void start (int midiNote, float velocity, const Tables&, const EnvelopeSettings&);
     void release (const EnvelopeSettings&);
     void refresh (const Tables&, const EnvelopeSettings&, bool snap = false);
-    void render (float* left, float* right, int numSamples); // adds, numSamples <= maxChunk
+    // Adds numSamples (<= maxChunk) of output; bend scales every partial's frequency.
+    void render (float* left, float* right, int numSamples, float bend);
 
     static constexpr int maxChunk = 64;
 
@@ -98,6 +100,10 @@ public:
     void noteOff (int midiNote, const EnvelopeSettings&);
     void allNotesOff (const EnvelopeSettings&);
 
+    // Pitch wheel position, -1..1, bending every note by up to bendRange semitones.
+    void setPitchBend (float wheel) { bendTarget = std::exp2 (wheel * bendRange / 12.0f); }
+    static constexpr float bendRange = 2.0f;
+
     // Overwrites left and right with numSamples of output.
     void render (float* left, float* right, int numSamples, const EnvelopeSettings&, float masterVolume);
 
@@ -110,5 +116,6 @@ private:
     double sampleRate = 44100.0;
     uint64_t counter = 0;
     float master = 0.0f;
+    float bendTarget = 1.0f, bend = 1.0f; // frequency ratios
 };
 } // namespace harmonics

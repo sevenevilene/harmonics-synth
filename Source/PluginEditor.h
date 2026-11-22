@@ -33,6 +33,32 @@ private:
     const std::atomic<int>& subharmonics;
 };
 
+// A pitch or mod wheel: drag it up and down. The pitch wheel springs back to
+// the middle when let go; double-click either one to reset it. It also shows
+// moves coming in from a MIDI keyboard.
+class WheelComponent final : public juce::Component
+{
+public:
+    WheelComponent (std::atomic<float>& value, float minimum, float maximum, bool springBack, juce::String name);
+
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+
+private:
+    juce::Rectangle<float> wheelArea() const;
+    float resting() const { return springs ? 0.5f * (lo + hi) : lo; }
+    void set (float v);
+
+    std::atomic<float>& value;
+    const float lo, hi;
+    const bool springs;
+    const juce::String title;
+    float dragStartValue = 0.0f;
+};
+
 // The spectrum of the output, left and right, on a log frequency axis. The
 // colour shows where a frequency lies relative to the last played note: green
 // at its root, towards blue for harmonics and towards red for subharmonics.
@@ -87,8 +113,9 @@ private:
     SpectrumAnalyser analyser;
     juce::OwnedArray<juce::TextButton> spectrumButtons, panButtons;
     Control tilt, center, width, speed, subs, spread, reach, attack, release, volume;
-    juce::ToggleButton animate { "animate" }, glide { "glide" };
-    std::unique_ptr<APVTS::ButtonAttachment> animateAttachment, glideAttachment;
+    juce::ToggleButton glide { "glide" };
+    std::unique_ptr<APVTS::ButtonAttachment> glideAttachment;
+    WheelComponent pitchWheel, modWheel;
     juce::MidiKeyboardComponent keyboard;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HarmonicsAudioProcessorEditor)

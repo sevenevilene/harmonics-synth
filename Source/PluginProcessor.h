@@ -55,6 +55,11 @@ public:
 
     static const juce::StringArray spectrumNames, panCurveNames;
 
+    // The wheels, set by incoming MIDI (pitch bend, CC 1) and by the on-screen
+    // wheels; whichever moved last wins. Pitch -1..1, mod 0..1. The mod wheel
+    // sets how fast the formant and lfo algorithms animate.
+    std::atomic<float> pitchWheel { 0.0f }, modWheel { 0.0f };
+
     juce::AudioProcessorValueTreeState apvts;
     harmonics::Engine engine;
     juce::MidiKeyboardState keyboardState;
@@ -72,7 +77,7 @@ private:
     Controls readControls() const;
 
     std::atomic<float>* attack, *release, *volume, *subs, *tilt, *center, *width, *speed,
-                      *animate, *spread, *reach, *glide, *spectrum, *panCurve;
+                      *spread, *reach, *glide, *spectrum, *panCurve;
 
     Controls seen {};
     bool seenValid = false;

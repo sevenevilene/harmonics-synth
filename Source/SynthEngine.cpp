@@ -15,6 +15,7 @@ constexpr float fracScale = 1.0f / (float) (1u << fracBits);
 constexpr float voiceGain = 0.0424f;   // headroom for 8 voices of 129 partials
 constexpr float smoothingMs = 30.0f;   // level changes while a note sounds
 constexpr float masterSmoothingMs = 50.0f;
+constexpr float bendSmoothingMs = 10.0f;     // pitch wheel moves
 
 const std::array<float, sineSize + 1>& sineTable()
 {
@@ -202,7 +203,7 @@ void Voice::refresh (const Tables& tables, const EnvelopeSettings& s, bool snap)
     }
 }
 
-void Voice::render (float* left, float* right, int n)
+void Voice::render (float* left, float* right, int n, float bend)
 {
     float sumL[maxChunk] = {}, sumR[maxChunk] = {};
     const auto& sine = sineTable();
@@ -223,7 +224,7 @@ void Voice::render (float* left, float* right, int n)
         float l = advance (gainL[i]), r = advance (gainR[i]);
         const float l1 = gainL[i].value, r1 = gainR[i].value;
         uint32_t ph = phase[i];
-        const uint32_t inc = increment[i];
+        const uint32_t inc = bend == 1.0f ? increment[i] : (uint32_t) ((float) increment[i] * bend);
         phase[i] = ph + inc * (uint32_t) n;
 
         if (l == 0.0f && l1 == 0.0f && r == 0.0f && r1 == 0.0f)
@@ -331,17 +332,23 @@ void Engine::render (float* left, float* right, int numSamples, const EnvelopeSe
     std::fill_n (right, numSamples, 0.0f);
 
     const float masterStep = 1.0f / (float) std::max (1.0, masterSmoothingMs * 0.001 * sampleRate);
+    const float bendCoeff = 1.0f - std::exp (-(float) Voice::maxChunk / (float) (bendSmoothingMs * 0.001 * sampleRate));
 
     for (int pos = 0; pos < numSamples; pos += Voice::maxChunk)
     {
         const int n = std::min (Voice::maxChunk, numSamples - pos);
+
+        // The bend glides towards the wheel once per chunk, landing exactly on it.
+        bend += (bendTarget - bend) * bendCoeff;
+        if (std::abs (bendTarget - bend) < 1.0e-5f)
+            bend = bendTarget;
 
         for (auto& v : voices)
         {
             if (! v.active)
                 continue;
             v.refresh (tables, s); // follow the tables while the note sounds
-            v.render (left + pos, right + pos, n);
+            v.render (left + pos, right + pos, n, bend);
         }
 
         for (int i = pos; i < pos + n; ++i)

@@ -79,7 +79,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout HarmonicsAudioProcessor::cre
         std::make_unique<Float> (id ("center"), "Center", Range (1.0f, 32.0f), 8.0f, decimals (1)),
         std::make_unique<Float> (id ("width"), "Width", Range (0.5f, 8.0f), 2.0f, decimals (2)),
         std::make_unique<Float> (id ("speed"), "Speed", Range (0.0f, 4.0f), 1.0f, decimals (2)),
-        std::make_unique<juce::AudioParameterBool> (id ("animate"), "Animate", false),
         std::make_unique<Float> (id ("spread"), "Spread", Range (-1.0f, 1.0f), 0.8f, decimals (2)),
         std::make_unique<Float> (id ("reach"), "Reach", logRange (1.0f, 64.0f), 16.0f, decimals (1)),
         std::make_unique<juce::AudioParameterBool> (id ("glide"), "Glide", false),
@@ -100,7 +99,6 @@ HarmonicsAudioProcessor::HarmonicsAudioProcessor()
     center = apvts.getRawParameterValue ("center");
     width = apvts.getRawParameterValue ("width");
     speed = apvts.getRawParameterValue ("speed");
-    animate = apvts.getRawParameterValue ("animate");
     spread = apvts.getRawParameterValue ("spread");
     reach = apvts.getRawParameterValue ("reach");
     glide = apvts.getRawParameterValue ("glide");
@@ -169,19 +167,16 @@ void HarmonicsAudioProcessor::updateTables (int numSamples)
     seen = now;
     seenValid = true;
 
-    if (animate->load() > 0.5f)
+    // The mod wheel scales the animation speed; at zero the animation holds still.
+    if (const float rate = speed->load() * modWheel.load(); rate > 0.0f)
     {
         animationCountdown -= numSamples;
         while (animationCountdown <= 0.0)
         {
             animationCountdown += 0.03 * sampleRate;
-            animationTime += (double) speed->load() * 0.03;
+            animationTime += (double) rate * 0.03;
             fillAmps = fillAmps || mode >= Spectrum::formant;
         }
-    }
-    else
-    {
-        animationTime = animationCountdown = 0.0;
     }
 
     if (fillAmps)
@@ -201,8 +196,22 @@ void HarmonicsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         return;
     }
 
+    // Wheel moves arrive as MIDI ahead of the tables, so the mod wheel takes
+    // effect in this block.
+    for (const auto metadata : midi)
+    {
+        const auto message = metadata.getMessage();
+        if (message.isPitchWheel())
+            pitchWheel = juce::jlimit (-1.0f, 1.0f, (float) (message.getPitchWheelValue() - 8192) / 8191.0f);
+        else if (message.isControllerOfType (1))
+            modWheel = (float) message.getControllerValue() / 127.0f;
+        else if (message.isResetAllControllers())
+            pitchWheel = modWheel = 0.0f;
+    }
+
     updateTables (numSamples);
     keyboardState.processNextMidiBuffer (midi, 0, numSamples, true);
+    engine.setPitchBend (pitchWheel.load());
 
     const auto settings = envelopeSettings();
     const float master = volume->load();
