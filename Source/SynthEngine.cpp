@@ -65,11 +65,27 @@ float levelFor (const SpectrumSettings& s, int n)
 
 void fillSpectrum (Table& amps, const SpectrumSettings& s)
 {
+    // The partials a preset uses alternate in sign, root positive, so every
+    // shape fills the graph's whole -1..1 range symmetrically. With every
+    // partial starting in sine phase these are the textbook series: saw
+    // (1, -1/2, 1/3 ...) and triangle (1, -1/9, 1/25 ...) come out as the true
+    // waveforms. The algorithms count every partial, so their signs stay put
+    // while they morph.
+    std::array<float, numPartials> levels {};
+    int used = 0;
+    for (int n = 1; n <= numPartials; ++n)
+    {
+        const float level = levelFor (s, n);
+        levels[(size_t) n - 1] = (used % 2) && level != 0.0f ? -level : level;
+        if (s.mode >= Spectrum::tilt || level != 0.0f)
+            ++used;
+    }
+
     // Mirrored: subharmonic 1/n gets the same level as harmonic n, scaled by subs.
     for (int i = 0; i < numSlots; ++i)
     {
         const int n = std::abs (i - rootSlot) + 1;
-        amps[(size_t) i].store (levelFor (s, n) * (i < rootSlot ? s.subs : 1.0f), std::memory_order_relaxed);
+        amps[(size_t) i].store (levels[(size_t) n - 1] * (i < rootSlot ? s.subs : 1.0f), std::memory_order_relaxed);
     }
 }
 

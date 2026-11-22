@@ -34,6 +34,8 @@ The results are in `build/Harmonics_artefacts/Release/`: `Standalone/Harmonics.a
 
 Play from a MIDI keyboard or click the on-screen one. Draw on the three graphs with the mouse; click a preset or pan curve to overwrite them. The algorithm sliders (tilt, center, width) only redraw the levels while tilt, formant or lfo is selected, and spread and reach only redraw the pans while a curve other than centre is selected. Moving subs always redraws the levels. The tables are saved with the plugin state.
 
+The presets and algorithms fill the whole -1 to 1 range of the levels graph: the partials a preset uses alternate in sign (root positive), so saw is 1, −½, ⅓ … and triangle 1, −1/9, 1/25 …, the textbook series that make the true waveforms with every partial in sine phase. The levels' sizes are unchanged, so held notes sound the same; only the waveform shape changes (square, for instance, gets a peakier waveform with the same spectrum). The algorithms alternate every partial, so their signs don't flip while they morph.
+
 The pan curves differ from the prototype in three ways, so that the sound doesn't lean to one side:
 
 - **spread** sorts the partials by pitch in octaves (subharmonics towards the left, harmonics towards the right, most of the way out at harmonic *reach*). Instead of pivoting on the root it pivots on the point where the levels balance between the speakers, so the louder harmonics don't pull it right. The pivot follows the levels and is worked out for a note around middle C; low notes with subs turned up can still lean right a little, since they have few subharmonics to balance with.
