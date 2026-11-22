@@ -95,15 +95,31 @@ public:
 private:
     using APVTS = juce::AudioProcessorValueTreeState;
 
+    // A slider whose right-click opens the MIDI learn menu instead of moving it.
+    struct LearnSlider final : public juce::Slider
+    {
+        LearnSlider() : juce::Slider (LinearHorizontal, TextBoxRight) {}
+        void mouseDown (const juce::MouseEvent&) override;
+        void mouseDrag (const juce::MouseEvent& e) override { if (! menuClick) juce::Slider::mouseDrag (e); }
+        void mouseUp (const juce::MouseEvent& e) override { if (! std::exchange (menuClick, false)) juce::Slider::mouseUp (e); }
+
+        std::function<void()> onMenu;
+        bool menuClick = false;
+    };
+
     struct Control
     {
         juce::Label label;
-        juce::Slider slider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+        LearnSlider slider;
         std::unique_ptr<APVTS::SliderAttachment> attachment;
+        juce::String text;   // the label without the MIDI learn note
+        int learnIndex = -1; // into HarmonicsAudioProcessor::learnableIDs
     };
 
     void timerCallback() override;
     void addControl (Control&, const juce::String& parameterID, const juce::String& text);
+    void showLearnMenu (Control&);
+    void mouseDown (const juce::MouseEvent&) override; // right-click on a label
     void addToggle (juce::ToggleButton&, std::unique_ptr<APVTS::ButtonAttachment>&, const juce::String& parameterID);
 
     HarmonicsAudioProcessor& synth;
@@ -117,6 +133,7 @@ private:
     std::unique_ptr<APVTS::ButtonAttachment> glideAttachment;
     WheelComponent pitchWheel, modWheel;
     juce::MidiKeyboardComponent keyboard;
+    juce::TooltipWindow tooltips { this, 700 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HarmonicsAudioProcessorEditor)
 };

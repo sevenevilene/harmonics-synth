@@ -19,7 +19,8 @@ private:
     std::atomic<int> writePos { 0 };
 };
 
-class HarmonicsAudioProcessor final : public juce::AudioProcessor
+class HarmonicsAudioProcessor final : public juce::AudioProcessor,
+                                      private juce::Timer
 {
 public:
     HarmonicsAudioProcessor();
@@ -60,6 +61,15 @@ public:
     // morphs the formant and lfo algorithms.
     std::atomic<float> pitchWheel { 0.0f }, modWheel { 0.0f };
 
+    // MIDI learn: any of these parameters can follow a MIDI controller (CC 0-119),
+    // one controller per parameter. Indices below are into learnableIDs.
+    static const juce::StringArray learnableIDs;
+    void startLearning (int index) { learning = index; }   // the next CC that moves is assigned
+    void cancelLearning() { learning = -1; }
+    int learningIndex() const { return learning.load(); }
+    void forgetController (int index);
+    int controllerFor (int index) const;                    // -1 if none
+
     juce::AudioProcessorValueTreeState apvts;
     harmonics::Engine engine;
     juce::MidiKeyboardState keyboardState;
@@ -84,6 +94,16 @@ private:
     std::atomic<bool> spectrumRefill { false }, panRefill { false }, keepTables { false };
     juce::SpinLock stateLock;
     double sampleRate = 44100.0;
+
+    // controllerTarget[cc] = learnable parameter it drives, or -1. Written by the
+    // audio thread (learning) and the message thread (forget, state), read by both.
+    std::array<std::atomic<int>, 120> controllerTarget;
+    std::atomic<int> learning { -1 };
+
+    // Controller moves wait here (normalised 0..1, < 0 = none) until the message
+    // thread hands them to the parameters, so the host is told from its own thread.
+    std::array<std::atomic<float>, 16> pendingValue;
+    void timerCallback() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HarmonicsAudioProcessor)
 };

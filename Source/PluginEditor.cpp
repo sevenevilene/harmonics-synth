@@ -409,9 +409,30 @@ HarmonicsAudioProcessorEditor::HarmonicsAudioProcessorEditor (HarmonicsAudioProc
     startTimerHz (30);
 }
 
+void HarmonicsAudioProcessorEditor::LearnSlider::mouseDown (const juce::MouseEvent& e)
+{
+    menuClick = e.mods.isPopupMenu();
+    if (menuClick)
+    {
+        if (onMenu)
+            onMenu();
+        return;
+    }
+    juce::Slider::mouseDown (e);
+}
+
 void HarmonicsAudioProcessorEditor::addControl (Control& c, const juce::String& parameterID, const juce::String& text)
 {
+    c.text = text;
+    c.learnIndex = HarmonicsAudioProcessor::learnableIDs.indexOf (parameterID);
     c.label.setText (text, juce::dontSendNotification);
+    if (c.learnIndex >= 0)
+    {
+        c.slider.onMenu = [this, &c] { showLearnMenu (c); };
+        c.label.addMouseListener (this, false);
+        c.label.setTooltip ("Right-click to assign a MIDI controller");
+        c.slider.setTooltip ("Right-click to assign a MIDI controller");
+    }
     c.label.setColour (juce::Label::textColourId, textColour);
     c.slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 18);
     c.slider.setColour (juce::Slider::thumbColourId, accent);
@@ -420,6 +441,32 @@ void HarmonicsAudioProcessorEditor::addControl (Control& c, const juce::String& 
     addAndMakeVisible (c.label);
     addAndMakeVisible (c.slider);
     c.attachment = std::make_unique<APVTS::SliderAttachment> (synth.apvts, parameterID, c.slider);
+}
+
+void HarmonicsAudioProcessorEditor::showLearnMenu (Control& c)
+{
+    const int index = c.learnIndex;
+    const int cc = synth.controllerFor (index);
+    const bool learning = synth.learningIndex() == index;
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader (c.text);
+    if (learning)
+        menu.addItem ("Cancel learning", [this] { synth.cancelLearning(); });
+    else
+        menu.addItem (cc >= 0 ? "Learn another MIDI CC (now CC " + juce::String (cc) + ")" : "Learn MIDI CC",
+                      [this, index] { synth.startLearning (index); });
+    menu.addItem ("Forget MIDI CC", cc >= 0, false, [this, index] { synth.forgetController (index); });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&c.slider));
+}
+
+void HarmonicsAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
+{
+    if (! e.mods.isPopupMenu())
+        return;
+    for (auto* c : { &tilt, &center, &width, &amount, &subs, &spread, &reach, &attack, &release, &volume })
+        if (e.eventComponent == &c->label)
+            showLearnMenu (*c);
 }
 
 void HarmonicsAudioProcessorEditor::addToggle (juce::ToggleButton& b, std::unique_ptr<APVTS::ButtonAttachment>& attachment,
@@ -440,6 +487,23 @@ void HarmonicsAudioProcessorEditor::timerCallback()
         spectrumButtons[i]->setToggleState (i == spectrum, juce::dontSendNotification);
     for (int i = 0; i < panButtons.size(); ++i)
         panButtons[i]->setToggleState (i == panCurve, juce::dontSendNotification);
+
+    // Show each control's MIDI controller, or that it is waiting for one.
+    const int learning = synth.learningIndex();
+    for (auto* c : { &tilt, &center, &width, &amount, &subs, &spread, &reach, &attack, &release, &volume })
+    {
+        if (c->learnIndex < 0)
+            continue;
+        const int cc = synth.controllerFor (c->learnIndex);
+        const auto text = learning == c->learnIndex ? c->text + "  (learning...)"
+                          : cc >= 0                 ? c->text + "  [CC " + juce::String (cc) + "]"
+                                                    : c->text;
+        if (c->label.getText() != text)
+        {
+            c->label.setText (text, juce::dontSendNotification);
+            c->label.setColour (juce::Label::textColourId, learning == c->learnIndex ? accent : textColour);
+        }
+    }
 
     amps.repaint();
     panL.repaint();

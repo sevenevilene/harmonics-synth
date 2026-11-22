@@ -7,6 +7,9 @@ using namespace harmonics;
 const juce::StringArray HarmonicsAudioProcessor::spectrumNames {
     "saw", "square", "triangle", "sine", "even", "organ", "bell", "clear", "tilt", "formant", "lfo"
 };
+const juce::StringArray HarmonicsAudioProcessor::learnableIDs {
+    "tilt", "center", "width", "amount", "subs", "spread", "reach", "attack", "release", "volume"
+};
 const juce::StringArray HarmonicsAudioProcessor::panCurveNames { "centre", "spread", "alternate", "log", "log-side" };
 
 namespace
@@ -104,6 +107,42 @@ HarmonicsAudioProcessor::HarmonicsAudioProcessor()
     glide = apvts.getRawParameterValue ("glide");
     spectrum = apvts.getRawParameterValue ("spectrum");
     panCurve = apvts.getRawParameterValue ("panCurve");
+
+    jassert (learnableIDs.size() <= (int) pendingValue.size());
+    for (auto& t : controllerTarget)
+        t = -1;
+    for (auto& v : pendingValue)
+        v = -1.0f;
+    startTimerHz (60);
+}
+
+int HarmonicsAudioProcessor::controllerFor (int index) const
+{
+    for (size_t cc = 0; cc < controllerTarget.size(); ++cc)
+        if (controllerTarget[cc].load() == index)
+            return (int) cc;
+    return -1;
+}
+
+void HarmonicsAudioProcessor::forgetController (int index)
+{
+    for (auto& t : controllerTarget)
+    {
+        int expected = index;
+        t.compare_exchange_strong (expected, -1);
+    }
+}
+
+void HarmonicsAudioProcessor::timerCallback()
+{
+    for (int i = 0; i < learnableIDs.size(); ++i)
+    {
+        const float value = pendingValue[(size_t) i].exchange (-1.0f);
+        if (value < 0.0f)
+            continue;
+        if (auto* p = apvts.getParameter (learnableIDs[i]); p != nullptr && ! juce::approximatelyEqual (p->getValue(), value))
+            p->setValueNotifyingHost (value);
+    }
 }
 
 void HarmonicsAudioProcessor::prepareToPlay (double newSampleRate, int)
@@ -200,6 +239,18 @@ void HarmonicsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
             modWheel = (float) message.getControllerValue() / 127.0f;
         else if (message.isResetAllControllers())
             pitchWheel = modWheel = 0.0f;
+
+        if (message.isController() && message.getControllerNumber() < (int) controllerTarget.size())
+        {
+            const int cc = message.getControllerNumber();
+            if (const int index = learning.exchange (-1); index >= 0)
+            {
+                forgetController (index);           // one controller per parameter
+                controllerTarget[(size_t) cc] = index;
+            }
+            if (const int index = controllerTarget[(size_t) cc].load(); index >= 0)
+                pendingValue[(size_t) index] = (float) message.getControllerValue() / 127.0f;
+        }
     }
 
     updateTables();
@@ -267,6 +318,13 @@ void HarmonicsAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     tables.setProperty ("panR", tableToString (engine.tables.panR), nullptr);
     state.appendChild (tables, nullptr);
 
+    state.removeChild (state.getChildWithName ("MidiLearn"), nullptr);
+    juce::ValueTree midiLearn ("MidiLearn");
+    for (int i = 0; i < learnableIDs.size(); ++i)
+        if (const int cc = controllerFor (i); cc >= 0)
+            midiLearn.setProperty (learnableIDs[i], cc, nullptr);
+    state.appendChild (midiLearn, nullptr);
+
     if (const auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -282,6 +340,13 @@ void HarmonicsAudioProcessor::setStateInformation (const void* data, int sizeInB
 
     const juce::SpinLock::ScopedLockType lock (stateLock);
     apvts.replaceState (state);
+
+    const auto midiLearn = state.getChildWithName ("MidiLearn");
+    for (auto& t : controllerTarget)
+        t = -1;
+    for (int i = 0; i < learnableIDs.size(); ++i)
+        if (const int cc = (int) midiLearn.getProperty (learnableIDs[i], -1); cc >= 0 && cc < (int) controllerTarget.size())
+            controllerTarget[(size_t) cc] = i;
 
     if (tables.isValid())
     {
