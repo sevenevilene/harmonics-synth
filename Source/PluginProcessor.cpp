@@ -171,10 +171,13 @@ void HarmonicsAudioProcessor::updateTables()
     seen = now;
     seenValid = true;
 
+    // Spread balances itself against the levels, so it follows them.
+    fillPan = fillPan || (fillAmps && curve == PanCurve::spread);
+
     if (fillAmps)
         fillSpectrum (engine.tables.amps, { mode, now.tilt, now.center, now.width, now.subs, now.morph });
     if (fillPan)
-        fillPans (engine.tables.panL, engine.tables.panR, curve, now.spread, now.reach);
+        fillPans (engine.tables.panL, engine.tables.panR, curve, now.spread, now.reach, engine.tables.amps);
 }
 
 void HarmonicsAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)

@@ -43,7 +43,8 @@ struct SpectrumSettings
 };
 
 void fillSpectrum (Table& amps, const SpectrumSettings&);
-void fillPans (Table& panL, Table& panR, PanCurve, float spread, float reach);
+// The levels are read by the spread curve, which balances itself against them.
+void fillPans (Table& panL, Table& panR, PanCurve, float spread, float reach, const Table& amps);
 
 // How many of a note's 129 partials are subharmonics.
 int subharmonicsFor (double frequency);

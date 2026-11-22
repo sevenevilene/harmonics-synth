@@ -1,6 +1,7 @@
 #include "SynthEngine.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 
 namespace harmonics
@@ -72,28 +73,89 @@ void fillSpectrum (Table& amps, const SpectrumSettings& s)
     }
 }
 
-void fillPans (Table& panL, Table& panR, PanCurve curve, float spread, float reach)
+namespace
 {
+// Distance from the root in octaves: log2 n, negative for subharmonics.
+float octavesFromRoot (int d)
+{
+    return d < 0 ? -std::log2 ((float) (1 - d)) : std::log2 ((float) (d + 1));
+}
+
+// Every curve but spread is balanced by construction. Spread sorts the partials
+// by pitch, so with the root in the middle the harmonics (louder than the
+// subharmonics) would pull it to the right. Instead the curve pivots around
+// the point, in octaves, where the levels of a middle-C note balance out
+// between the speakers.
+float spreadPivot (const Table& amps, float width, float spread)
+{
+    const int first = rootSlot - subharmonicsFor (261.63);
+    std::array<float, numPartials> energy {}, octaves {};
+    double total = 0.0;
+    for (int p = 0; p < numPartials; ++p)
+    {
+        const float a = amps[(size_t) (first + p)].load (std::memory_order_relaxed);
+        energy[(size_t) p] = a * a;
+        octaves[(size_t) p] = octavesFromRoot (first + p - rootSlot);
+        total += (double) (a * a);
+    }
+    if (total < 1.0e-12)
+        return 0.0f; // silent
+
+    // How much more energy ends up on the side harmonics go to; it falls as
+    // the pivot rises.
+    const auto lean = [&] (float pivot)
+    {
+        double sum = 0.0;
+        for (size_t p = 0; p < (size_t) numPartials; ++p)
+            sum += (double) energy[p] * std::sin (std::tanh ((octaves[p] - pivot) / width) * std::abs (spread) * (float) pi * 0.5f);
+        return sum;
+    };
+
+    // Search within two octaves of the root.
+    float lo = -2.0f, hi = 2.0f;
+    if (lean (lo) <= 0.0) return lo;
+    if (lean (hi) >= 0.0) return hi;
+    for (int step = 0; step < 20; ++step)
+    {
+        const float mid = 0.5f * (lo + hi);
+        (lean (mid) > 0.0 ? lo : hi) = mid;
+    }
+    return 0.5f * (lo + hi);
+}
+} // namespace
+
+void fillPans (Table& panL, Table& panR, PanCurve curve, float spread, float reach, const Table& amps)
+{
+    // Spread: fully out at harmonic "reach" (tanh 1.5 = 90% of the way).
+    const float spreadWidth = std::max (std::log2 (std::max (reach, 2.0f)), 1.0f) / 1.5f;
+    const float pivot = curve == PanCurve::spread && std::abs (spread) > 0.0f ? spreadPivot (amps, spreadWidth, spread) : 0.0f;
+
     for (int i = 0; i < numSlots; ++i)
     {
         const int d = i - rootSlot;         // distance from the root, negative = subharmonic
         const int a = std::abs (d);
-        const float side = (a % 2) ? 1.0f : -1.0f;
+        const float side = (a % 2) ? 1.0f : -1.0f;  // alternate: neighbours take turns
         float x = 0.0f;                     // -1 left, 0 centre, 1 right
 
         switch (curve)
         {
             case PanCurve::centre: break;
-            case PanCurve::spread:    x = std::tanh ((float) d / std::max (reach, 1.0f)); break;
+            case PanCurve::spread:    x = std::tanh ((octavesFromRoot (d) - pivot) / spreadWidth); break;
             case PanCurve::alternate: x = std::tanh ((float) a / std::max (reach, 1.0f)) * side; break;
             case PanCurve::log:
             case PanCurve::logSide:
                 // Subharmonics, the root and 2x stay centred; from 3x up the
                 // harmonics widen evenly per octave, fully wide at harmonic "reach".
+                // Log picks each harmonic's side from the Thue-Morse sequence
+                // (the parity of the bits of n - 1): neighbours mostly take turns,
+                // and unlike plain odd/even turns the octaves of the root don't
+                // all land on one side, so smooth and sparse spectra alike stay
+                // balanced. Log-side sends every harmonic the same way.
                 if (d > 0)
                 {
                     const float width = std::log ((float) (a + 1) / 2.0f) / std::log (std::max (reach, 4.0f) / 2.0f);
-                    x = std::clamp (width, 0.0f, 1.0f) * (curve == PanCurve::log ? side : 1.0f);
+                    const float thueMorse = (std::popcount ((unsigned) a) % 2) ? 1.0f : -1.0f;
+                    x = std::clamp (width, 0.0f, 1.0f) * (curve == PanCurve::log ? thueMorse : 1.0f);
                 }
                 break;
         }
@@ -276,7 +338,7 @@ void Voice::render (float* left, float* right, int n, float bend)
 Engine::Engine()
 {
     fillSpectrum (tables.amps, {});
-    fillPans (tables.panL, tables.panR, PanCurve::log, 0.8f, 16.0f);
+    fillPans (tables.panL, tables.panR, PanCurve::log, 0.8f, 16.0f, tables.amps);
 }
 
 void Engine::prepare (double newSampleRate)
